@@ -55,7 +55,6 @@ def get_sensatt_column(data, satt):
 def main(id, expdir, data_fname, args):
     ''':param env_splits: the envrionments, infinite possible, each binary of
                           form np.array([[.1, 0.9], [0.2, 0.8], [0.9, 0.1]])'''
-    word2vec, _, _ = data_proc.load_word_vectors(setup.get_wordvecspath())
     full_data = pd.read_csv(data_fname)
     full_data[args['sens_att']] = get_sensatt_column(full_data, args['sens_att'])
 
@@ -100,8 +99,15 @@ def main(id, expdir, data_fname, args):
             env['toxicity'] = env['toxicity'].apply(lnoise_fnc)
         env_partitions.append(env)
 
-
-    t = data_proc.GetEmbedding(word2vec, stopwords=STOPWORDS)
+    #Set up dataset with proper embeddings
+    if args['word_encoding'] == 'embed':
+        word2vec, _, _ = data_proc.load_word_vectors(setup.get_wordvecspath())
+        t = data_proc.GetEmbedding(word2vec, stopwords=STOPWORDS)
+    elif args['word_encoding'] == 'BOW':
+        word_freq = pickle.load(open(setup.get_wordfreqpath(), 'rb'))
+        vocabulary = sorted([x for x in word_freq if ((word_freq[x] > 20) and (word_freq[x] < 1e3))])
+        vocabulary = {vocabulary[i]:i for i in range(len(vocabulary))}
+        t = data_proc.GetBOW(vocabulary, lem=WordNetLemmatizer(), stopwords=STOPWORDS)
 
     #Baseline Logistic Regression
     train_partition = data_proc.ToxicityDataset(pd.concat([e for e in env_partitions[:-1]], \
@@ -162,11 +168,13 @@ if __name__ == '__main__':
     parser.add_argument("env_id", type=str, default=None)
     parser.add_argument("label_noise", type=str, default=None)
     parser.add_argument("sens_att", type=str, default=None)
+    parser.add_argument("word_encoding", type=str, default=None)
     args = parser.parse_args()
 
     params = {'seed':int(args.seed), \
               'env_id':int(args.env_id), \
               'label_noise':float(args.label_noise), \
-              'sens_att':args.sens_att}
+              'sens_att':args.sens_att, \
+              'word_encoding':args.word_encoding}
 
     main(args.id, args.expdir, args.data_fname, params)

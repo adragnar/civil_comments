@@ -31,6 +31,13 @@ def get_datapath():
     else:
         return "~/civil_comments/data/all_data.csv"
 
+def get_wordfreqpath():
+    hostname = socket.gethostname()
+    if hostname == "Roberts-MacBook-Pro.local":
+        return "data/wordfreq.pkl"
+    else:
+        return "~/civil_comments/data/wordfreq.pkl"
+
 def get_wordvecspath():
     hostname = socket.gethostname()
     if hostname == "Roberts-MacBook-Pro.local":
@@ -46,12 +53,13 @@ def setup():
     splits = [0, 1, 2]
     label_noise = [0, 0.25]
     sens_att = ['LGBTQ']
+    w_enc = ['BOW']  #embed
 
     cmdfile = join(expdir, 'cmdfile.sh')
     with open(cmdfile, 'w') as cmdf:
-        for id, combo in enumerate(itertools.product(seeds, splits, label_noise, sens_att)):
+        for id, combo in enumerate(itertools.product(seeds, splits, label_noise, sens_att, w_enc)):
             command_str = \
-            '''python main.py {id} {expdir} {data_fname} {seed} {env_split} {label_noise} {sens_att}\n'''
+            '''python main.py {id} {expdir} {data_fname} {seed} {env_split} {label_noise} {sens_att} {w_enc}\n'''
             command_str = command_str.format(
                 id=id,
                 expdir=expdir,
@@ -59,7 +67,8 @@ def setup():
                 seed=combo[0],
                 env_split=combo[1],
                 label_noise=combo[2],
-                sens_att=combo[3]
+                sens_att=combo[3],
+                w_enc=combo[4]
             )
             cmdf.write(command_str)
 
