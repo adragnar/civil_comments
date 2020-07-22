@@ -37,7 +37,6 @@ def compute_loss(pred, ground, ltype='MSE'):
     elif ltype == 'BCE':
         return F.binary_cross_entropy_with_logits(torch.tensor(pred).float(), torch.tensor(ground).float()).numpy()
     if ltype == 'ACC':
-        import pdb; pdb.set_trace()
         pred = pred_binarize(pred)
         return 1 - F.mse_loss(torch.tensor(pred).float(), torch.tensor(ground).float()).numpy()
 
