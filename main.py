@@ -41,33 +41,42 @@ esplit_from_id = {0:np.array([[0.1, 0.9], [0.2, 0.8], [0.9, 0.1]]), \
                   1:np.array([[0.1, 0.9], [0.3, 0.7], [0.9, 0.1]]), \
                   2:np.array([[0.05, 0.95], [0.35, 0.65], [0.9, 0.1]])}
 
+def get_sensatt_column(data, satt):
+    '''From the sensitive attribute described, return a pd series with that
+       indicator'''
 
+    if satt == 'LGBTQ':
+        return data[['homosexual_gay_or_lesbian', 'bisexual', 'other_sexual_orientation']].max(axis=1)
+    elif satt == 'muslim':
+        return data['muslim']
+    else:
+        raise Exception('satt not implemented')
 
-def main(id, expdir, data_fname, seed, env_id, label_noise):
+def main(id, expdir, data_fname, args):
     ''':param env_splits: the envrionments, infinite possible, each binary of
                           form np.array([[.1, 0.9], [0.2, 0.8], [0.9, 0.1]])'''
     word2vec, _, _ = data_proc.load_word_vectors(setup.get_wordvecspath())
     full_data = pd.read_csv(data_fname)
-    full_data['LGTBQ'] = full_data[['homosexual_gay_or_lesbian', 'bisexual', 'other_sexual_orientation']].max(axis=1)
+    full_data[args['sens_att']] = get_sensatt_column(full_data, args['sens_att'])
 
     #Data Processing
-    full_partition = full_data[(full_data['LGTBQ'] > 0)]
+    full_partition = full_data[(full_data[args['sens_att']] > 0)]
     toxic, non_toxic = full_partition[full_data['toxicity'] >= thresh].sample(frac=1).reset_index(drop=True), \
                             full_partition[full_data['toxicity'] < thresh].sample(frac=1).reset_index(drop=True)
     toxic['toxicity'], non_toxic['toxicity'] = toxic['toxicity'].apply((lambda x: 1 if x > thresh else 0)), \
                         non_toxic['toxicity'].apply((lambda x: 1 if x > thresh else 0))
 
     totals = {'nt':len(non_toxic), 't':len(toxic)}
-    env_splits = esplit_from_id[env_id]
+    env_splits = esplit_from_id[args['env_id']]
     weights = {'nt':env_splits.mean(axis=0)[0], 't':env_splits.mean(axis=0)[1]}
 
     #Adjust so that desired env splits possible
     if float(totals['t']/(totals['t'] + totals['nt'])) >= weights['t']:  #see who has the bigger proportion
         ns = int(totals['nt']/weights['nt'] - totals['nt'])   #     int((len(full_partition) - weights['nt']*totals['nt'])/weights['t'])
-        toxic = toxic.sample(n=ns, random_state=seed)
+        toxic = toxic.sample(n=ns, random_state=args['seed'])
     else:
         ns = int(totals['t']/weights['t'] - totals['t'])
-        non_toxic = non_toxic.sample(n=ns, random_state=seed)
+        non_toxic = non_toxic.sample(n=ns, random_state=args['seed'])
 
     #partition env splits
     nenvs = env_splits.shape[0]
@@ -86,8 +95,8 @@ def main(id, expdir, data_fname, seed, env_id, label_noise):
 
         #Make full env
         env = pd.concat([nt, t], ignore_index=True).sample(frac=1)
-        if label_noise > 0:
-            lnoise_fnc = lambda x: np.random.binomial(1, 1-label_noise) if x > thresh else np.random.binomial(1, label_noise)
+        if args['label_noise'] > 0:
+            lnoise_fnc = lambda x: np.random.binomial(1, 1-args['label_noise']) if x > thresh else np.random.binomial(1, args['label_noise'])
             env['toxicity'] = env['toxicity'].apply(lnoise_fnc)
         env_partitions.append(env)
 
@@ -104,7 +113,7 @@ def main(id, expdir, data_fname, seed, env_id, label_noise):
     baseline_train_score = baseline_model.score(train_partition['x'], train_partition['y'])
     baseline_test_score = baseline_model.score(test_partition['x'], test_partition['y'])
 
-    baseline_res = {'id':{'seed':seed, 'env_splits':env_id, 'label_noise':label_noise}, \
+    baseline_res = {'id':{'seed':args['seed'], 'env_splits':args['env_id'], 'label_noise':args['label_noise']}, \
                     'results':{'train':baseline_train_score, 'test':baseline_test_score}, \
                     'model':baseline_model}
     pickle.dump(baseline_res, open(join(expdir, '{}_baseline.pkl'.format(id)), 'wb'))
@@ -115,7 +124,7 @@ def main(id, expdir, data_fname, seed, env_id, label_noise):
 
     print(train_envs[0]['x'].shape, test_partition['x'].shape)
 
-    args = {'lr': 0.001, \
+    params = {'lr': 0.001, \
              'n_iterations':70000, \
              'penalty_anneal_iters':1, \
              'l2_reg':1.0, \
@@ -123,7 +132,7 @@ def main(id, expdir, data_fname, seed, env_id, label_noise):
              'hid_layers':1, \
              'verbose':False}
     base = ref.LinearInvariantRiskMinimization('cls')
-    irm_model, errors, penalties, losses = base.train(train_envs, seed, args)
+    irm_model, errors, penalties, losses = base.train(train_envs, args['seed'], params)
 
     train_logits = base.predict(np.concatenate([train_envs[i]['x'] for i in range(len(train_envs))]), irm_model)
     train_labels = np.concatenate([train_envs[i]['y'] for i in range(len(train_envs))])
@@ -132,7 +141,7 @@ def main(id, expdir, data_fname, seed, env_id, label_noise):
 
     irm_train_acc = ref.compute_loss(np.expand_dims(train_logits, axis=1), train_labels, ltype='ACC')
     irm_test_acc = ref.compute_loss(np.expand_dims(test_logits, axis=1), test_labels, ltype='ACC')
-    irm_res = {'id':{'seed':seed, 'env_splits':env_id, 'label_noise':label_noise}, \
+    irm_res = {'id':{'seed':args['seed'], 'env_splits':args['env_id'], 'label_noise':args['label_noise']}, \
                     'results':{'train':irm_train_acc, 'test':irm_test_acc}, \
                     'model':irm_model}
 
@@ -150,9 +159,14 @@ if __name__ == '__main__':
     parser.add_argument("data_fname", type=str,
                         help="filename adult.csv")
     parser.add_argument("seed", type=str, default=None)
-    parser.add_argument("env_split", type=str, default=None)
+    parser.add_argument("env_id", type=str, default=None)
     parser.add_argument("label_noise", type=str, default=None)
+    parser.add_argument("sens_att", type=str, default=None)
     args = parser.parse_args()
 
-    main(args.id, args.expdir, args.data_fname, int(args.seed), int(args.env_split), \
-           float(args.label_noise))
+    params = {'seed':int(args.seed), \
+              'env_id':int(args.env_id), \
+              'label_noise':float(args.label_noise), \
+              'sens_att':args.sens_att}
+
+    main(args.id, args.expdir, args.data_fname, params)

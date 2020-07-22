@@ -17,7 +17,11 @@ def get_expdir(fname):
     else:
         raise Exception('Unrecognized Computer')
 
-    os.makedirs(expdir)
+    try:
+        os.makedirs(expdir)
+    except FileExistsError:
+        pass
+
     return expdir
 
 def get_datapath():
@@ -41,19 +45,21 @@ def setup():
     seeds = [10000, 8079, 501]
     splits = [0, 1, 2]
     label_noise = [0, 0.25]
+    sens_att = ['LGBTQ']
 
     cmdfile = join(expdir, 'cmdfile.sh')
     with open(cmdfile, 'w') as cmdf:
-        for id, combo in enumerate(itertools.product(seeds, splits, label_noise)):
+        for id, combo in enumerate(itertools.product(seeds, splits, label_noise, sens_att)):
             command_str = \
-            '''python main.py {id} {expdir} {data_fname} {seed} {env_split} {label_noise}\n'''
+            '''python main.py {id} {expdir} {data_fname} {seed} {env_split} {label_noise} {sens_att}\n'''
             command_str = command_str.format(
                 id=id,
                 expdir=expdir,
                 data_fname=data_fname,
                 seed=combo[0],
                 env_split=combo[1],
-                label_noise=combo[2]
+                label_noise=combo[2],
+                sens_att=combo[3]
             )
             cmdf.write(command_str)
 
