@@ -1,5 +1,5 @@
-max_proc=100
-cmdfile=$(python launchfiles/setup_params.py 0)
+max_proc=150
+cmdfile=$(python launchfiles/setup_params.py 1)
 echo $cmdfile
 
 num_cmds=`wc -l $cmdfile | cut -d' ' -f1`

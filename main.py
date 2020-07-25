@@ -26,78 +26,43 @@ from sklearn.linear_model import Lasso, LinearRegression, LogisticRegression
 import torch
 import torch.nn.functional as F
 
-import data_proc
-import ref
-import setup_params as setup
-
-
 import nltk
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 STOPWORDS = set(stopwords.words('english'))
-thresh = 0.2
 
-esplit_from_id = {0:np.array([[0.1, 0.9], [0.2, 0.8], [0.9, 0.1]]), \
-                  1:np.array([[0.1, 0.9], [0.3, 0.7], [0.9, 0.1]]), \
-                  2:np.array([[0.05, 0.95], [0.35, 0.65], [0.9, 0.1]])}
+import algo_hyperparams
+import data_proc
+import models
+import ref
+import setup_params as setup
+import partition_environments
 
-def get_sensatt_column(data, satt):
-    '''From the sensitive attribute described, return a pd series with that
-       indicator'''
-
-    if satt == 'LGBTQ':
-        return data[['homosexual_gay_or_lesbian', 'bisexual', 'other_sexual_orientation']].max(axis=1)
-    elif satt == 'muslim':
-        return data['muslim']
+def evaluate_model(train, test, base, model, hid_layers=None,  ltype='ACC'):
+    '''Given a model and its data, evaluate
+    :param trainenvs: list of dictionaries of np arrays, each which is
+    the dataset for a train env {'x':arr, 'y':arr}
+    :param testenv: dict of np arrays dataset for a test env  {'x':arr, 'y':arr}
+    :param model: trained mdoel used for prediction
+    :param base: the model needed for prediction method'''
+    if hid_layers is not None:
+        train_logits = base.predict(train['x'], model, hid_layers=hid_layers)
+        test_logits = base.predict(test['x'], model, hid_layers=hid_layers)
     else:
-        raise Exception('satt not implemented')
+        train_logits = base.predict(train['x'], model)
+        test_logits = base.predict(test['x'], model)
+    train_labels = train['y']
+    test_labels = test['y']
 
-def main(id, expdir, data_fname, args):
+    train_acc = ref.compute_loss(np.expand_dims(train_logits, axis=1), train_labels, ltype=ltype)
+    test_acc = ref.compute_loss(np.expand_dims(test_logits, axis=1), test_labels, ltype=ltype)
+    return train_acc, test_acc
+
+def main(id, expdir, data_fname, args, algo_args):
     ''':param env_splits: the envrionments, infinite possible, each binary of
                           form np.array([[.1, 0.9], [0.2, 0.8], [0.9, 0.1]])'''
-    full_data = pd.read_csv(data_fname)
-    full_data[args['sens_att']] = get_sensatt_column(full_data, args['sens_att'])
 
-    #Data Processing
-    full_partition = full_data[(full_data[args['sens_att']] > 0)]
-    toxic, non_toxic = full_partition[full_data['toxicity'] >= thresh].sample(frac=1).reset_index(drop=True), \
-                            full_partition[full_data['toxicity'] < thresh].sample(frac=1).reset_index(drop=True)
-    toxic['toxicity'], non_toxic['toxicity'] = toxic['toxicity'].apply((lambda x: 1 if x > thresh else 0)), \
-                        non_toxic['toxicity'].apply((lambda x: 1 if x > thresh else 0))
 
-    totals = {'nt':len(non_toxic), 't':len(toxic)}
-    env_splits = esplit_from_id[args['env_id']]
-    weights = {'nt':env_splits.mean(axis=0)[0], 't':env_splits.mean(axis=0)[1]}
-
-    #Adjust so that desired env splits possible
-    if float(totals['t']/(totals['t'] + totals['nt'])) >= weights['t']:  #see who has the bigger proportion
-        ns = int(totals['nt']/weights['nt'] - totals['nt'])   #     int((len(full_partition) - weights['nt']*totals['nt'])/weights['t'])
-        toxic = toxic.sample(n=ns, random_state=args['seed'])
-    else:
-        ns = int(totals['t']/weights['t'] - totals['t'])
-        non_toxic = non_toxic.sample(n=ns, random_state=args['seed'])
-
-    #partition env splits
-    nenvs = env_splits.shape[0]
-    e_props = env_splits/env_splits.sum(axis=0) #proprotion of vector in each env
-
-    env_partitions = []  #Note - last env is the test env
-    for i in range(nenvs):  #Note - tehre might be an error here that excludes  single sample from diff envs
-        #Get both componenets of envs
-        past_ind = int(np.array(e_props[:i, 0]).sum() * len(non_toxic))
-        pres_ind = int(np.array(e_props[:(i+1), 0]).sum() * len(non_toxic))
-        nt = non_toxic.iloc[past_ind:pres_ind]
-
-        past_ind = int(np.array(e_props[:i, 1]).sum() * len(toxic))
-        pres_ind = int(np.array(e_props[:(i+1), 1]).sum() * len(toxic))
-        t = toxic.iloc[past_ind:pres_ind]
-
-        #Make full env
-        env = pd.concat([nt, t], ignore_index=True).sample(frac=1)
-        if args['label_noise'] > 0:
-            lnoise_fnc = lambda x: np.random.binomial(1, 1-args['label_noise']) if x > thresh else np.random.binomial(1, args['label_noise'])
-            env['toxicity'] = env['toxicity'].apply(lnoise_fnc)
-        env_partitions.append(env)
 
     #Set up dataset with proper embeddings
     if args['word_encoding'] == 'embed':
@@ -109,17 +74,28 @@ def main(id, expdir, data_fname, args):
         vocabulary = {vocabulary[i]:i for i in range(len(vocabulary))}
         t = data_proc.GetBOW(vocabulary, lem=WordNetLemmatizer(), stopwords=STOPWORDS)
 
+    #Get Environment Data
+    env_partitions = partition_environments.partition_envs(data_fname, args)
+
     #Baseline Logistic Regression
     train_partition = data_proc.ToxicityDataset(pd.concat([e for e in env_partitions[:-1]], \
                                                 ignore_index=True)[['id', 'toxicity', 'comment_text']], transform=t)[:]
     test_partition = data_proc.ToxicityDataset(env_partitions[-1][['id', 'toxicity', 'comment_text']], transform=t)[:]
 
     print(train_partition['x'].shape, test_partition['x'].shape)
-    baseline_model = LogisticRegression(fit_intercept = True, penalty = 'l2').fit(train_partition['x'], train_partition['y'])
-    baseline_train_score = baseline_model.score(train_partition['x'], train_partition['y'])
-    baseline_test_score = baseline_model.score(test_partition['x'], test_partition['y'])
 
-    baseline_res = {'id':{'seed':args['seed'], 'env_splits':args['env_id'], 'label_noise':args['label_noise']}, \
+    if args['base_model'] == 'logreg':
+        baseline_model = LogisticRegression(fit_intercept = True, penalty = 'l2').fit(train_partition['x'], train_partition['y'])
+        baseline_train_score = baseline_model.score(train_partition['x'], train_partition['y'])
+        baseline_test_score = baseline_model.score(test_partition['x'], test_partition['y'])
+    elif args['base_model'] == 'mlp':
+        base = models.MLP()
+        baseline_model, _ = base.run(train_partition['x'], train_partition['y'], algo_args)
+        baseline_train_score, baseline_test_score = \
+                  evaluate_model(train_partition, test_partition, base, baseline_model, \
+                                   hid_layers=algo_args['hid_layers'], ltype='ACC')
+
+    baseline_res = {'id':{'seed':args['seed'], 'env_splits':args['env_id'], 'label_noise':args['label_noise'], 'algo_params':algo_args}, \
                     'results':{'train':baseline_train_score, 'test':baseline_test_score}, \
                     'model':baseline_model}
     pickle.dump(baseline_res, open(join(expdir, '{}_baseline.pkl'.format(id)), 'wb'))
@@ -127,27 +103,24 @@ def main(id, expdir, data_fname, args):
     #IRM Logistic Regression
     train_envs = [data_proc.ToxicityDataset(e[['id', 'toxicity', 'comment_text']], transform=t)[:] for e in env_partitions[:-1]]
     test_partition = data_proc.ToxicityDataset(env_partitions[-1][['id', 'toxicity', 'comment_text']], transform=t)[:]
-
     print(train_envs[0]['x'].shape, test_partition['x'].shape)
 
-    params = {'lr': 0.001, \
-             'n_iterations':70000, \
-             'penalty_anneal_iters':1, \
-             'l2_reg':1.0, \
-             'pen_wgt':10, \
-             'hid_layers':1, \
-             'verbose':False}
-    base = ref.LinearInvariantRiskMinimization('cls')
-    irm_model, errors, penalties, losses = base.train(train_envs, args['seed'], params)
+    if args['base_model'] == 'logreg':
+        base = models.LinearInvariantRiskMinimization('cls')
+        irm_model, errors, penalties, losses = base.train(train_envs, args['seed'], algo_args)
+        irm_train_acc, irm_test_acc = \
+             evaluate_model({'x': np.concatenate([train_envs[i]['x'] for i in range(len(train_envs))]), \
+                             'y':np.concatenate([train_envs[i]['y'] for i in range(len(train_envs))])}, \
+                             test_partition, base, irm_model, ltype='ACC')
+    elif args['base_model'] == 'mlp':
+        base = models.InvariantRiskMinimization('cls')
+        irm_model, errors, penalties, losses = base.train(train_envs, args['seed'], algo_args)
+        irm_train_acc, irm_test_acc = \
+             evaluate_model({'x': np.concatenate([train_envs[i]['x'] for i in range(len(train_envs))]), \
+                             'y':np.concatenate([train_envs[i]['y'] for i in range(len(train_envs))])}, \
+                             test_partition, base, irm_model, hid_layers=algo_args['hid_layers'], ltype='ACC')
 
-    train_logits = base.predict(np.concatenate([train_envs[i]['x'] for i in range(len(train_envs))]), irm_model)
-    train_labels = np.concatenate([train_envs[i]['y'] for i in range(len(train_envs))])
-    test_logits = base.predict(test_partition['x'], irm_model)
-    test_labels = test_partition['y']
-
-    irm_train_acc = ref.compute_loss(np.expand_dims(train_logits, axis=1), train_labels, ltype='ACC')
-    irm_test_acc = ref.compute_loss(np.expand_dims(test_logits, axis=1), test_labels, ltype='ACC')
-    irm_res = {'id':{'seed':args['seed'], 'env_splits':args['env_id'], 'label_noise':args['label_noise']}, \
+    irm_res = {'id':{'seed':args['seed'], 'env_splits':args['env_id'], 'label_noise':args['label_noise'], 'algo_params':algo_args}, \
                     'results':{'train':irm_train_acc, 'test':irm_test_acc}, \
                     'model':irm_model}
 
@@ -169,12 +142,35 @@ if __name__ == '__main__':
     parser.add_argument("label_noise", type=str, default=None)
     parser.add_argument("sens_att", type=str, default=None)
     parser.add_argument("word_encoding", type=str, default=None)
+    parser.add_argument("model", type=str, default=None)
+
+    #Hyperparams
+    parser.add_argument('-inc_hyperparams', type=int, default=0)
+    parser.add_argument('-lr', type=float, default=None)
+    parser.add_argument('-niter', type=int, default=None)
+    parser.add_argument('-l2', type=float, default=None)
+    parser.add_argument('-penalty_weight', type=float, default=None)
+    parser.add_argument('-penalty_anneal', type=float, default=None)
+    parser.add_argument('-hid_layers', type=int, default=None)
     args = parser.parse_args()
 
     params = {'seed':int(args.seed), \
               'env_id':int(args.env_id), \
               'label_noise':float(args.label_noise), \
               'sens_att':args.sens_att, \
-              'word_encoding':args.word_encoding}
+              'word_encoding':args.word_encoding, \
+              'base_model':args.model \
+              }
 
-    main(args.id, args.expdir, args.data_fname, params)
+    if args.inc_hyperparams == 0:
+        algo_params = algo_hyperparams.get_hyperparams(args.model)
+    else:
+        algo_params =  {'lr': args.lr, \
+                         'n_iterations':args.niter, \
+                         'penalty_anneal_iters':args.penalty_anneal, \
+                         'l2_reg':args.l2, \
+                         'pen_wgt':args.penalty_weight, \
+                         'hid_layers':args.hid_layers, \
+                         'verbose':False}
+
+    main(args.id, args.expdir, args.data_fname, params, algo_params)
