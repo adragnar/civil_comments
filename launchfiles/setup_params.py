@@ -54,6 +54,7 @@ def hyp_setup():
     sens_att = ['LGBTQ']
     w_enc = ['embed']  #embed
     model = ['mlp']
+    shift_type = ['ltype']
 
     lr = [0.0001, 0.01]
     niter = [10000, 50000]
@@ -66,11 +67,11 @@ def hyp_setup():
     cmdfile = join(expdir, 'cmdfile.sh')
     with open(cmdfile, 'w') as cmdf:
         for id, combo in enumerate(itertools.product(seeds, splits, label_noise, \
-                          sens_att, w_enc, model, lr, niter, l2, penalty_weight, \
+                          sens_att, w_enc, model, shift_type, lr, niter, l2, penalty_weight, \
                           penalty_anneal, hid_layers)):
             command_str = \
-            '''python main.py {id} {expdir} {data_fname} {seed} {env_split} {label_noise} {sens_att} {w_enc} {model}\
-               -inc_hyperparams 1 -lr {lr} -niter {niter} -l2 {l2} -penalty_weight {penwgt} -penalty_anneal {penann} \
+            '''python main.py {id} {expdir} {data_fname} {seed} {env_split} {label_noise} {sens_att} {w_enc} {model} \
+               {stype} -inc_hyperparams 1 -lr {lr} -niter {niter} -l2 {l2} -penalty_weight {penwgt} -penalty_anneal {penann} \
                -hid_layers {hid}\n'''
             command_str = command_str.format(
                 id=id,
@@ -82,12 +83,13 @@ def hyp_setup():
                 sens_att=combo[3],
                 w_enc=combo[4],
                 model=combo[5],
-                lr=combo[6],
-                niter=combo[7],
-                l2=combo[8],
-                penwgt=combo[9],
-                penann=combo[10],
-                hid=combo[11]
+                stype=combo[6],
+                lr=combo[7],
+                niter=combo[8],
+                l2=combo[9],
+                penwgt=combo[10],
+                penann=combo[11],
+                hid=combo[12]
             )
             cmdf.write(command_str)
 
@@ -105,12 +107,13 @@ def setup():
     sens_att = ['LGBTQ', 'muslim']
     w_enc = ['embed']  #embed
     model = ['logreg']
+    shift_type = ['lshift']  #lshift, zshift 
 
     cmdfile = join(expdir, 'cmdfile.sh')
     with open(cmdfile, 'w') as cmdf:
-        for id, combo in enumerate(itertools.product(seeds, splits, label_noise, sens_att, w_enc, model)):
+        for id, combo in enumerate(itertools.product(seeds, splits, label_noise, sens_att, w_enc, model, shift_type)):
             command_str = \
-            '''python main.py {id} {expdir} {data_fname} {seed} {env_split} {label_noise} {sens_att} {w_enc} {model}\n'''
+            '''python main.py {id} {expdir} {data_fname} {seed} {env_split} {label_noise} {sens_att} {w_enc} {model} {stype}\n'''
             command_str = command_str.format(
                 id=id,
                 expdir=expdir,
@@ -120,7 +123,8 @@ def setup():
                 label_noise=combo[2],
                 sens_att=combo[3],
                 w_enc=combo[4],
-                model=combo[5]
+                model=combo[5],
+                stype=combo[6]
             )
             cmdf.write(command_str)
 

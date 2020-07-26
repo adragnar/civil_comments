@@ -143,6 +143,7 @@ if __name__ == '__main__':
     parser.add_argument("sens_att", type=str, default=None)
     parser.add_argument("word_encoding", type=str, default=None)
     parser.add_argument("model", type=str, default=None)
+    parser.add_argument("shift_type", type=str, default=None)
 
     #Hyperparams
     parser.add_argument('-inc_hyperparams', type=int, default=0)
@@ -159,7 +160,8 @@ if __name__ == '__main__':
               'label_noise':float(args.label_noise), \
               'sens_att':args.sens_att, \
               'word_encoding':args.word_encoding, \
-              'base_model':args.model \
+              'base_model':args.model, \
+              'shift_type':args.shift_type
               }
 
     if args.inc_hyperparams == 0:

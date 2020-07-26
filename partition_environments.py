@@ -8,9 +8,13 @@ import numpy as np
 
 thresh = 0.2
 
-esplit_from_id = {0:np.array([[0.1, 0.9], [0.2, 0.8], [0.9, 0.1]]), \
-                  1:np.array([[0.1, 0.9], [0.3, 0.7], [0.9, 0.1]]), \
-                  2:np.array([[0.05, 0.95], [0.35, 0.65], [0.9, 0.1]])}
+# esplit_from_id = {0:np.array([[0.1, 0.9], [0.2, 0.8], [0.9, 0.1]]), \
+#                   1:np.array([[0.1, 0.9], [0.3, 0.7], [0.9, 0.1]]), \
+#                   2:np.array([[0.05, 0.95], [0.35, 0.65], [0.9, 0.1]])}
+esplit_from_id = {0:[0.1, 0.2, 0.9], \
+                  1:[0.1, 0.3, 0.9], \
+                  2:[0.05, 0.35, 0.9]
+                  }
 
 def get_sensatt_column(data, satt):
     '''From the sensitive attribute described, return a pd series with that
@@ -23,6 +27,75 @@ def get_sensatt_column(data, satt):
     else:
         raise Exception('satt not implemented')
 
+def balance_sa_partitions(data, env_splits, label, seed):
+    '''Given DataFrame of data tagged with SA (z=1), split into y=1 and y=0
+    in proportions given by esplit
+    :param data: dataframe. Labels binarized (pd DataFrame)
+    :param esplit: list of p_e for each env, last is test
+    :return data where (y_Bar=0, z=1), (y_Bar=1, z=1)'''
+    toxic, non_toxic = data[data[label] == 1].sample(frac=1).reset_index(drop=True), \
+                            data[data[label] == 0].sample(frac=1).reset_index(drop=True)
+
+    totals = {'nt':len(non_toxic), 't':len(toxic)}
+
+    weights = {'nt':sum(env_splits)/len(env_splits), 't':sum((1-e) for e in env_splits)/len(env_splits)}
+
+    #Adjust so that desired env splits possible
+    req_t = int(float(weights['t']/weights['nt']) * totals['nt']) #req if other max used
+    req_nt = int(float(weights['nt']/weights['t']) * totals['t'])
+
+    if req_nt < totals['nt']:  #figure out limiting data source
+        non_toxic = non_toxic.sample(n=req_nt, random_state=seed)
+    elif req_nt > totals['nt']:
+        toxic = toxic.sample(n=req_t, random_state=seed)
+
+    return non_toxic, toxic
+
+def compute_proportions_of_env(pe, diff_z, l_noise):
+    '''Given a probability of spurious label flip, return relative probabilites
+    of different classes. Includes option where different SA labels
+    :param diff_z bool - whetehr or not there is spurious corr with some class
+    :param l_noise: amount of label noise present (float)'''
+    if (not diff_z) and (l_noise == 0):
+        ret =  {'y0_sa1':pe, 'y1_sa1':(1 - pe)}
+    elif diff_z and (l_noise == 0):
+        ret = {'y0_sa1':pe/2, 'y1_sa1':(1 - pe)/2, 'y0_sa0':(1 - pe)/2, 'y1_sa0':pe/2}
+    elif (not diff_z) and (l_noise > 0):
+        ret = {'y0_sa1':pe * (1 - l_noise), 'y1_sa1':(1 - pe) * (1 - l_noise), \
+                'y0_sa1_l':pe * l_noise, 'y1_sa1_l':(1 - pe) * l_noise}
+    elif diff_z and (l_noise > 0):
+        ret = {'y0_sa1':pe/2 * (1 - l_noise), 'y1_sa1':(1 - pe)/2 * (1 - l_noise), 'y0_sa0':(1 - pe)/2 * (1 - l_noise), 'y1_sa0':pe/2 * (1 - l_noise), \
+                'y0_sa1_l':pe/2 * l_noise, 'y1_sa1_l':(1 - pe)/2 * l_noise, 'y0_sa0_l':(1 - pe)/2 * l_noise, 'y1_sa0_l':pe/2* l_noise}
+    else:
+        raise Exception('Not implemented combination')
+
+    assert sum(ret.values()) == 1.0
+    return ret
+
+def split_envs(src_dict, prop_dict, env_size, seed):
+    '''Given two repositoreis of data that are in the desired proportions to
+    eachother overall, split into specified number of environments (equal size)
+    with proprotions for each env given in p_list
+
+    :param src_dict: dict of the data partitions to sample from
+    :param prop_dict: dict of relative proporitons from each ith sample
+    :param env_size: Ultimate size of the final envirornment
+    :return a version of src list with the sampled data removed'''
+
+    assert len(src_dict) == len(prop_dict)
+
+    sampled_src = {}
+    env_partitions = []
+    for p, d_source in src_dict.items():
+        nsamples = int(prop_dict[p] * env_size)
+        e = d_source.sample(n=nsamples, random_state=seed)
+        env_partitions.append(e)
+        sampled_src[p] = d_source.drop(e.index, axis=0)
+
+    return pd.concat(env_partitions, ignore_index=True).sample(frac=1), \
+              sampled_src
+
+
 def partition_envs(fname, args):
     '''Take a pd Dataframe and split it into list of environments
     :param fname: path to dataset
@@ -34,47 +107,46 @@ def partition_envs(fname, args):
 
     full_data = pd.read_csv(fname)
     full_data[args['sens_att']] = get_sensatt_column(full_data, args['sens_att'])
+    full_data['toxicity'] = full_data['toxicity'].apply((lambda x: 1 if x > thresh else 0))
+    data_sources = {}
 
     #Data Processing
-    full_partition = full_data[(full_data[args['sens_att']] > 0)]
-    toxic, non_toxic = full_partition[full_data['toxicity'] >= thresh].sample(frac=1).reset_index(drop=True), \
-                            full_partition[full_data['toxicity'] < thresh].sample(frac=1).reset_index(drop=True)
-    toxic['toxicity'], non_toxic['toxicity'] = toxic['toxicity'].apply((lambda x: 1 if x > thresh else 0)), \
-                        non_toxic['toxicity'].apply((lambda x: 1 if x > thresh else 0))
+    sa_partition = full_data[(full_data[args['sens_att']] > 0)]
+    non_sa_partition = full_data[(full_data[args['sens_att']] == 0)]
 
-    totals = {'nt':len(non_toxic), 't':len(toxic)}
-    env_splits = esplit_from_id[args['env_id']]
-    weights = {'nt':env_splits.mean(axis=0)[0], 't':env_splits.mean(axis=0)[1]}
+    data_sources['y0_sa1'], data_sources['y1_sa1'] = balance_sa_partitions(sa_partition, \
+                      esplit_from_id[args['env_id']], 'toxicity', args['seed'])
 
-    #Adjust so that desired env splits possible
-    if float(totals['t']/(totals['t'] + totals['nt'])) >= weights['t']:  #see who has the bigger proportion
-        ns = int(totals['nt']/weights['nt'] - totals['nt'])   #     int((len(full_partition) - weights['nt']*totals['nt'])/weights['t'])
-        toxic = toxic.sample(n=ns, random_state=args['seed'])
-    else:
-        ns = int(totals['t']/weights['t'] - totals['t'])
-        non_toxic = non_toxic.sample(n=ns, random_state=args['seed'])
+    #Get Non SA Attributes if needed
+    if args['shift_type'] == 'zshift':
+        yi_size = len(data_sources['y0_sa1']) + len(data_sources['y1_sa1'])  #Assuming labels balanced in all envs so |y0_sa1| = |y1_sa0|
+        data_sources['y0_sa0'] = non_sa_partition[(non_sa_partition['toxicity'] == 0)].sample( \
+                              n=len(data_sources['y1_sa1']), random_state=args['seed'])
+        data_sources['y1_sa0'] = non_sa_partition[(non_sa_partition['toxicity'] == 1)].sample( \
+                              n=len(data_sources['y0_sa1']), random_state=args['seed'])
 
-    #partition env splits
-    nenvs = env_splits.shape[0]
-    e_props = env_splits/env_splits.sum(axis=0) #proprotion of vector in each env
+    #Apply Label Noise if needed
+    if args['label_noise'] > 0:
+        tmp_datal = {}
+        for k, v in data_sources.items():
+            tmp_datal[(k+'_l')] = data_sources[k].sample(frac=args['label_noise'], random_state=args['seed'])
+            tmp_datal[(k+'_l')]['toxicity'] = tmp_datal[(k+'_l')]['toxicity'].apply(lambda x: 1 if x == 0 else 0)
+            data_sources[k] = data_sources[k].drop(tmp_datal[(k+'_l')].index, axis=0)
+        #Merge label flipped and regular data
+        data_sources.update(tmp_datal)
 
-    env_partitions = []  #Note - last env is the test env
-    for i in range(nenvs):  #Note - tehre might be an error here that excludes  single sample from diff envs
-        #Get both componenets of envs
-        past_ind = int(np.array(e_props[:i, 0]).sum() * len(non_toxic))
-        pres_ind = int(np.array(e_props[:(i+1), 0]).sum() * len(non_toxic))
-        nt = non_toxic.iloc[past_ind:pres_ind]
+    nenvs = len(esplit_from_id[args['env_id']])
+    total_nsamples = sum([d.shape[0] for d in list(data_sources.values())])
 
-        past_ind = int(np.array(e_props[:i, 1]).sum() * len(toxic))
-        pres_ind = int(np.array(e_props[:(i+1), 1]).sum() * len(toxic))
-        t = toxic.iloc[past_ind:pres_ind]
+    #Make each environment
+    env_partitions = []
+    for pe in esplit_from_id[args['env_id']]:
 
-        #Make full env
-        env = pd.concat([nt, t], ignore_index=True).sample(frac=1)
-        if args['label_noise'] > 0:
-            lnoise_fnc = lambda x: np.random.binomial(1, 1-args['label_noise']) if x > thresh else np.random.binomial(1, args['label_noise'])
-            env['toxicity'] = env['toxicity'].apply(lnoise_fnc)
+        src_props = compute_proportions_of_env(pe, \
+                          (True if args['shift_type'] == 'zshift' else False), args['label_noise'])
+        env, data_sources = split_envs({k:data_sources[k] for k in src_props}, src_props, int(total_nsamples/nenvs), args['seed'])
         env_partitions.append(env)
+
     return env_partitions
 
 if __name__ == '__main__':
@@ -87,7 +159,8 @@ if __name__ == '__main__':
 
     params = {'seed':1000, \
               'env_id':int(args.env_id), \
-              'label_noise':0.0, \
+              'label_noise':0.25, \
+              'shift_type':'zshift', \
               'sens_att':'LGBTQ'}
 
     envs = partition_envs(args.data_fname, params)
