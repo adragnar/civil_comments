@@ -95,6 +95,74 @@ def split_envs(src_dict, prop_dict, env_size, seed):
     return pd.concat(env_partitions, ignore_index=True).sample(frac=1), \
               sampled_src
 
+def add_label_noise(ds, lnoise, seed):
+    '''Given a dict of data sources, return a new dict with double the sources,
+    where each original is spilt into 2 - where the 2nd has labels flipped.
+    Note - only to be applied when all other partitions have been defined
+    :param ds: dicitonary of data sources {name:DataFrame}
+    :param lnoise: probability with which to flip label
+    :return a dicitonary of all paritions, new ones denoted with '_l''''
+
+    tmp_datal = {}
+    for k, v in ds.items():
+        tmp_datal[(k+'_l')] = ds[k].sample(frac=lnoise, random_state=seed)
+        tmp_datal[(k+'_l')]['toxicity'] = tmp_datal[(k+'_l')]['toxicity'].apply(lambda x: 1 if x == 0 else 0)
+        ds[k] = ds[k].drop(tmp_datal[(k+'_l')].index, axis=0)
+    #Merge label flipped and regular data
+    return {**ds, **tmp_datal}
+
+
+def load_data(fname, args):
+    full_data = pd.read_csv(fname)
+    full_data[args['sens_att']] = get_sensatt_column(full_data, args['sens_att'])
+    full_data['toxicity'] = full_data['toxicity'].apply((lambda x: 1 if x > thresh else 0))
+    return full_data
+
+def partition_envs_labelshift(fname, all_sa, args):
+    '''Partition environments such that occurence of SA (or its lack) does not
+    vary across envs, but the label associaion does.'''
+    def compute_proportions_of_env(pe, l_noise):
+        '''Given a probability of spurious label flip, return relative probabilites
+        of different classes. Includes option where different SA labels
+        :param diff_z bool - whetehr or not there is spurious corr with some class
+        :param l_noise: amount of label noise present (float)'''
+        if (not diff_z) and (l_noise == 0):
+            ret =  {'y0':pe, 'y11':(1 - pe)}
+
+        else: (not diff_z) and (l_noise > 0):
+            ret = {'y0':pe * (1 - l_noise), 'y1':(1 - pe) * (1 - l_noise), \
+                    'y0_l':pe * l_noise, 'y1_l':(1 - pe) * l_noise}
+
+        assert sum(ret.values()) == 1.0
+        return ret
+
+    full_data = load_data(fname, args)
+
+    #Data Processing
+    if all_sa:
+        full_partition = full_data[(full_data[args['sens_att']] > 0)]
+    else:
+        full_partition = full_data[(full_data[args['sens_att']] == 0)]
+
+    data_sources = {}
+    data_sources['y0'], data_sources['y1'] = balance_sa_partitions(sa_partition, \
+                      esplit_from_id[args['env_id']], 'toxicity', args['seed'])
+
+    if args['label_noise'] > 0:
+        data_sources = add_label_noise(data_sources, args['label_noise'], args['seed'])
+
+    nenvs = len(esplit_from_id[args['env_id']])
+    total_nsamples = sum([d.shape[0] for d in list(data_sources.values())])
+
+    #Make each environment
+    env_partitions = []
+    for pe in esplit_from_id[args['env_id']]:
+        src_props = compute_proportions_of_env(pe, args['label_noise'])
+        env, data_sources = split_envs({k:data_sources[k] for k in src_props}, src_props, int(total_nsamples/nenvs), args['seed'])
+        env_partitions.append(env)
+
+    return env_partitions
+
 
 def partition_envs(fname, args):
     '''Take a pd Dataframe and split it into list of environments
@@ -105,35 +173,43 @@ def partition_envs(fname, args):
     :params args['sens_att']: col in dataset whose data to include
     :return list of numpy arrays, last is testenv'''
 
-    full_data = pd.read_csv(fname)
-    full_data[args['sens_att']] = get_sensatt_column(full_data, args['sens_att'])
-    full_data['toxicity'] = full_data['toxicity'].apply((lambda x: 1 if x > thresh else 0))
-    data_sources = {}
+    def compute_proportions_of_env(pe, l_noise):
+        '''Given a probability of spurious label flip, return relative probabilites
+        of different classes. Includes option where different SA labels
+        :param diff_z bool - whetehr or not there is spurious corr with some class
+        :param l_noise: amount of label noise present (float)'''
+
+        if l_noise == 0:
+            ret = {'y0_sa1':pe/2, 'y1_sa1':(1 - pe)/2, 'y0_sa0':(1 - pe)/2, 'y1_sa0':pe/2}
+        else:
+            ret = {'y0_sa1':pe/2 * (1 - l_noise), 'y1_sa1':(1 - pe)/2 * (1 - l_noise), 'y0_sa0':(1 - pe)/2 * (1 - l_noise), 'y1_sa0':pe/2 * (1 - l_noise), \
+                    'y0_sa1_l':pe/2 * l_noise, 'y1_sa1_l':(1 - pe)/2 * l_noise, 'y0_sa0_l':(1 - pe)/2 * l_noise, 'y1_sa0_l':pe/2* l_noise}
+
+        assert sum(ret.values()) == 1.0
+        return ret
+
+    #Start Function
+    full_data = load_data(fname, args)
 
     #Data Processing
     sa_partition = full_data[(full_data[args['sens_att']] > 0)]
     non_sa_partition = full_data[(full_data[args['sens_att']] == 0)]
 
+    data_sources = {}
     data_sources['y0_sa1'], data_sources['y1_sa1'] = balance_sa_partitions(sa_partition, \
                       esplit_from_id[args['env_id']], 'toxicity', args['seed'])
 
-    #Get Non SA Attributes if needed
-    if args['shift_type'] == 'zshift':
-        yi_size = len(data_sources['y0_sa1']) + len(data_sources['y1_sa1'])  #Assuming labels balanced in all envs so |y0_sa1| = |y1_sa0|
-        data_sources['y0_sa0'] = non_sa_partition[(non_sa_partition['toxicity'] == 0)].sample( \
-                              n=len(data_sources['y1_sa1']), random_state=args['seed'])
-        data_sources['y1_sa0'] = non_sa_partition[(non_sa_partition['toxicity'] == 1)].sample( \
-                              n=len(data_sources['y0_sa1']), random_state=args['seed'])
+    # #Get Non SA Attributes if needed
+    # if args['shift_type'] == 'zshift':
+    yi_size = len(data_sources['y0_sa1']) + len(data_sources['y1_sa1'])  #Assuming labels balanced in all envs so |y0_sa1| = |y1_sa0|
+    data_sources['y0_sa0'] = non_sa_partition[(non_sa_partition['toxicity'] == 0)].sample( \
+                          n=len(data_sources['y1_sa1']), random_state=args['seed'])
+    data_sources['y1_sa0'] = non_sa_partition[(non_sa_partition['toxicity'] == 1)].sample( \
+                          n=len(data_sources['y0_sa1']), random_state=args['seed'])
 
     #Apply Label Noise if needed
     if args['label_noise'] > 0:
-        tmp_datal = {}
-        for k, v in data_sources.items():
-            tmp_datal[(k+'_l')] = data_sources[k].sample(frac=args['label_noise'], random_state=args['seed'])
-            tmp_datal[(k+'_l')]['toxicity'] = tmp_datal[(k+'_l')]['toxicity'].apply(lambda x: 1 if x == 0 else 0)
-            data_sources[k] = data_sources[k].drop(tmp_datal[(k+'_l')].index, axis=0)
-        #Merge label flipped and regular data
-        data_sources.update(tmp_datal)
+        data_sources = add_label_noise(data_sources, args['label_noise'], args['seed'])
 
     nenvs = len(esplit_from_id[args['env_id']])
     total_nsamples = sum([d.shape[0] for d in list(data_sources.values())])
@@ -141,9 +217,7 @@ def partition_envs(fname, args):
     #Make each environment
     env_partitions = []
     for pe in esplit_from_id[args['env_id']]:
-
-        src_props = compute_proportions_of_env(pe, \
-                          (True if args['shift_type'] == 'zshift' else False), args['label_noise'])
+        src_props = compute_proportions_of_env(pe, args['label_noise'])
         env, data_sources = split_envs({k:data_sources[k] for k in src_props}, src_props, int(total_nsamples/nenvs), args['seed'])
         env_partitions.append(env)
 
