@@ -45,6 +45,27 @@ def get_wordvecspath():
     else:
         return "~/civil_comments/data/crawl-300d-2M.vec"
 
+
+# #Exptype specific parameter additions
+# def cmd_append(cstr, newstr):
+#     '''Take an existing, properly formatted command string, append the newstr
+#     (with new flags and vals) to it and reformat'''
+#     cstr = cstr.replace('\n', ' ')
+#     cstr = cstr + newstr
+#     cstr = cstr + '\n'
+#
+#     assert newstr[0] != ' '
+#     assert cstr[-1] == '\n'
+#     return cstr
+#
+# def add_exptype_options(etype, cmdstr, vals):
+#     '''Given an exptype, append the appropiate options to it'''
+#     if 'shift' in etype:
+#         a = "-lshift_type {}".format(vals)
+#         cmdstr = cmd_append(cmdstr, a)
+#     return cmdstr
+
+
 def hyp_setup():
     expdir = get_expdir('cmnist')
     data_fname = get_datapath()
@@ -54,7 +75,7 @@ def hyp_setup():
     sens_att = ['LGBTQ']
     w_enc = ['embed']  #embed
     model = ['mlp']
-    shift_type = ['ltype']
+    exp_type = ['lshift_sa']
 
     lr = [0.0001, 0.01]
     niter = [10000, 50000]
@@ -67,11 +88,11 @@ def hyp_setup():
     cmdfile = join(expdir, 'cmdfile.sh')
     with open(cmdfile, 'w') as cmdf:
         for id, combo in enumerate(itertools.product(seeds, splits, label_noise, \
-                          sens_att, w_enc, model, shift_type, lr, niter, l2, penalty_weight, \
+                          sens_att, w_enc, model, exp_type, lr, niter, l2, penalty_weight, \
                           penalty_anneal, hid_layers)):
             command_str = \
             '''python main.py {id} {expdir} {data_fname} {seed} {env_split} {label_noise} {sens_att} {w_enc} {model} \
-               {stype} -inc_hyperparams 1 -lr {lr} -niter {niter} -l2 {l2} -penalty_weight {penwgt} -penalty_anneal {penann} \
+               {etype} -inc_hyperparams 1 -lr {lr} -niter {niter} -l2 {l2} -penalty_weight {penwgt} -penalty_anneal {penann} \
                -hid_layers {hid}\n'''
             command_str = command_str.format(
                 id=id,
@@ -83,7 +104,7 @@ def hyp_setup():
                 sens_att=combo[3],
                 w_enc=combo[4],
                 model=combo[5],
-                stype=combo[6],
+                etype=combo[6],
                 lr=combo[7],
                 niter=combo[8],
                 l2=combo[9],
@@ -107,13 +128,13 @@ def setup():
     sens_att = ['LGBTQ', 'muslim']
     w_enc = ['embed']  #embed
     model = ['logreg']
-    shift_type = ['lshift']  #lshift, zshift 
+    exp_type = ['lshift_sa', 'lshift_reg']  #lshift_sa, lshift_reg, cmnist
 
     cmdfile = join(expdir, 'cmdfile.sh')
     with open(cmdfile, 'w') as cmdf:
-        for id, combo in enumerate(itertools.product(seeds, splits, label_noise, sens_att, w_enc, model, shift_type)):
+        for id, combo in enumerate(itertools.product(seeds, splits, label_noise, sens_att, w_enc, model, exp_type)):
             command_str = \
-            '''python main.py {id} {expdir} {data_fname} {seed} {env_split} {label_noise} {sens_att} {w_enc} {model} {stype}\n'''
+            '''python main.py {id} {expdir} {data_fname} {seed} {env_split} {label_noise} {sens_att} {w_enc} {model} {etype}\n'''
             command_str = command_str.format(
                 id=id,
                 expdir=expdir,
@@ -124,7 +145,7 @@ def setup():
                 sens_att=combo[3],
                 w_enc=combo[4],
                 model=combo[5],
-                stype=combo[6]
+                etype=combo[6]
             )
             cmdf.write(command_str)
 

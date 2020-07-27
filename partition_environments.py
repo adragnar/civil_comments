@@ -101,7 +101,7 @@ def add_label_noise(ds, lnoise, seed):
     Note - only to be applied when all other partitions have been defined
     :param ds: dicitonary of data sources {name:DataFrame}
     :param lnoise: probability with which to flip label
-    :return a dicitonary of all paritions, new ones denoted with '_l''''
+    :return a dicitonary of all paritions, new ones denoted with _l'''
 
     tmp_datal = {}
     for k, v in ds.items():
@@ -118,7 +118,7 @@ def load_data(fname, args):
     full_data['toxicity'] = full_data['toxicity'].apply((lambda x: 1 if x > thresh else 0))
     return full_data
 
-def partition_envs_labelshift(fname, all_sa, args):
+def partition_envs_labelshift(fname, args):
     '''Partition environments such that occurence of SA (or its lack) does not
     vary across envs, but the label associaion does.'''
     def compute_proportions_of_env(pe, l_noise):
@@ -126,10 +126,10 @@ def partition_envs_labelshift(fname, all_sa, args):
         of different classes. Includes option where different SA labels
         :param diff_z bool - whetehr or not there is spurious corr with some class
         :param l_noise: amount of label noise present (float)'''
-        if (not diff_z) and (l_noise == 0):
-            ret =  {'y0':pe, 'y11':(1 - pe)}
+        if (l_noise == 0):
+            ret =  {'y0':pe, 'y1':(1 - pe)}
 
-        else: (not diff_z) and (l_noise > 0):
+        else:
             ret = {'y0':pe * (1 - l_noise), 'y1':(1 - pe) * (1 - l_noise), \
                     'y0_l':pe * l_noise, 'y1_l':(1 - pe) * l_noise}
 
@@ -139,13 +139,15 @@ def partition_envs_labelshift(fname, all_sa, args):
     full_data = load_data(fname, args)
 
     #Data Processing
-    if all_sa:
+    if args['exptype'] == 'lshift_sa':
         full_partition = full_data[(full_data[args['sens_att']] > 0)]
-    else:
+    elif args['exptype'] == 'lshift_reg':
         full_partition = full_data[(full_data[args['sens_att']] == 0)]
+    else:
+        assert False
 
     data_sources = {}
-    data_sources['y0'], data_sources['y1'] = balance_sa_partitions(sa_partition, \
+    data_sources['y0'], data_sources['y1'] = balance_sa_partitions(full_partition, \
                       esplit_from_id[args['env_id']], 'toxicity', args['seed'])
 
     if args['label_noise'] > 0:
@@ -164,7 +166,7 @@ def partition_envs_labelshift(fname, all_sa, args):
     return env_partitions
 
 
-def partition_envs(fname, args):
+def partition_envs_cmnist(fname, args):
     '''Take a pd Dataframe and split it into list of environments
     :param fname: path to dataset
     :param args['seed']: random seed (int)
@@ -220,7 +222,7 @@ def partition_envs(fname, args):
         src_props = compute_proportions_of_env(pe, args['label_noise'])
         env, data_sources = split_envs({k:data_sources[k] for k in src_props}, src_props, int(total_nsamples/nenvs), args['seed'])
         env_partitions.append(env)
-
+    import pdb; pdb.set_trace()
     return env_partitions
 
 if __name__ == '__main__':

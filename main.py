@@ -62,8 +62,6 @@ def main(id, expdir, data_fname, args, algo_args):
     ''':param env_splits: the envrionments, infinite possible, each binary of
                           form np.array([[.1, 0.9], [0.2, 0.8], [0.9, 0.1]])'''
 
-
-
     #Set up dataset with proper embeddings
     if args['word_encoding'] == 'embed':
         word2vec, _, _ = data_proc.load_word_vectors(setup.get_wordvecspath())
@@ -75,7 +73,12 @@ def main(id, expdir, data_fname, args, algo_args):
         t = data_proc.GetBOW(vocabulary, lem=WordNetLemmatizer(), stopwords=STOPWORDS)
 
     #Get Environment Data
-    env_partitions = partition_environments.partition_envs(data_fname, args)
+    if args['exptype'] == 'cmnist':
+        env_partitions = partition_environments.partition_envs_cmnist(data_fname, args)
+    elif 'lshift' in args['exptype']:
+        env_partitions = partition_environments.partition_envs_labelshift(data_fname, args)
+    else:
+        raise Exception('Data Partition Unimplemented')
 
     #Baseline Logistic Regression
     train_partition = data_proc.ToxicityDataset(pd.concat([e for e in env_partitions[:-1]], \
@@ -95,7 +98,7 @@ def main(id, expdir, data_fname, args, algo_args):
                   evaluate_model(train_partition, test_partition, base, baseline_model, \
                                    hid_layers=algo_args['hid_layers'], ltype='ACC')
 
-    baseline_res = {'id':{'seed':args['seed'], 'env_splits':args['env_id'], 'label_noise':args['label_noise'], 'algo_params':algo_args}, \
+    baseline_res = {'id':{'params':args, 'algo_params':algo_args}, \
                     'results':{'train':baseline_train_score, 'test':baseline_test_score}, \
                     'model':baseline_model}
     pickle.dump(baseline_res, open(join(expdir, '{}_baseline.pkl'.format(id)), 'wb'))
@@ -120,7 +123,7 @@ def main(id, expdir, data_fname, args, algo_args):
                              'y':np.concatenate([train_envs[i]['y'] for i in range(len(train_envs))])}, \
                              test_partition, base, irm_model, hid_layers=algo_args['hid_layers'], ltype='ACC')
 
-    irm_res = {'id':{'seed':args['seed'], 'env_splits':args['env_id'], 'label_noise':args['label_noise'], 'algo_params':algo_args}, \
+    irm_res = {'id':{'params':args, 'algo_params':algo_args}, \
                     'results':{'train':irm_train_acc, 'test':irm_test_acc}, \
                     'model':irm_model}
 
@@ -143,7 +146,7 @@ if __name__ == '__main__':
     parser.add_argument("sens_att", type=str, default=None)
     parser.add_argument("word_encoding", type=str, default=None)
     parser.add_argument("model", type=str, default=None)
-    parser.add_argument("shift_type", type=str, default=None)
+    parser.add_argument("exptype", type=str, default=None)
 
     #Hyperparams
     parser.add_argument('-inc_hyperparams', type=int, default=0)
@@ -161,7 +164,7 @@ if __name__ == '__main__':
               'sens_att':args.sens_att, \
               'word_encoding':args.word_encoding, \
               'base_model':args.model, \
-              'shift_type':args.shift_type
+              'exptype':args.exptype
               }
 
     if args.inc_hyperparams == 0:
