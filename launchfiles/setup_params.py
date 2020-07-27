@@ -115,12 +115,12 @@ def hyp_setup():
             cmdf.write(command_str)
 
     #Return cmdfile name
-    sys.stdout.write(cmdfile)
+    sys.stdout.write(expdir)
     sys.stdout.flush()
 
 
 def setup():
-    expdir = get_expdir('cmnist')
+    expdir = get_expdir('lshift')
     data_fname = get_datapath()
     seeds = [10000, 8079, 501]
     splits = [0, 1, 2]
@@ -150,7 +150,7 @@ def setup():
             cmdf.write(command_str)
 
     #Return cmdfile name
-    sys.stdout.write(cmdfile)
+    sys.stdout.write(expdir)
     sys.stdout.flush()
 
 if __name__ == '__main__':

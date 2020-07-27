@@ -1,6 +1,10 @@
 max_proc=100
-cmdfile=$(python launchfiles/setup_params.py 0)
+expdir=$(python launchfiles/setup_params.py 0)
+cmdfile="$expdir/cmdfile.sh"
 echo $cmdfile
+
+#Save code for reproducibility
+python reproducibility.py $(pwd) $expdir
 
 num_cmds=`wc -l $cmdfile | cut -d' ' -f1`
 echo "Wrote $num_cmds commands to $cmdfile"
