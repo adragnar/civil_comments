@@ -148,7 +148,12 @@ def generate_dataloader(d, elg, nbatch=1, t=None):
 
 #Word Embeddings/Processing
 def load_word_vectors(fname):
-    model = KeyedVectors.load_word2vec_format(fname, limit=None, binary=False)
+    def get_nvecs():
+        if hostname == "Roberts-MacBook-Pro.local":
+            return 100
+        else:
+            return None
+    model = KeyedVectors.load_word2vec_format(fname, limit=get_nvecs(), binary=False)
     vecs = model.vectors
     words = list(model.vocab.keys())
     return model, vecs, words
