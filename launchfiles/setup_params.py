@@ -120,7 +120,7 @@ def hyp_setup():
 
 
 def setup():
-    expdir = get_expdir('truecmnist')
+    expdir = get_expdir('lshift')
     data_fname = get_datapath()
     seeds = [10000, 8079, 501]
     splits = [0, 1, 2]
@@ -128,7 +128,7 @@ def setup():
     sens_att = ['LGBTQ', 'muslim']
     w_enc = ['embed']  #embed
     model = ['logreg']
-    exp_type = ['cmnist']  #lshift_sa, lshift_reg, cmnist
+    exp_type = ['lshift_reg']  #lshift_sa, lshift_reg, cmnist
 
     cmdfile = join(expdir, 'cmdfile.sh')
     with open(cmdfile, 'w') as cmdf:

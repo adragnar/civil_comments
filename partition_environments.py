@@ -122,7 +122,8 @@ def partition_envs_labelshift(fname, args):
     if args['exptype'] == 'lshift_sa':
         full_partition = full_data[(full_data[args['sens_att']] > 0)]
     elif args['exptype'] == 'lshift_reg':
-        full_partition = full_data[(full_data[args['sens_att']] == 0)]
+        ns = len(full_data[(full_data[args['sens_att']] > 0)]) * 3
+        full_partition = full_data[(full_data[args['sens_att']] == 0)].sample(n=ns, random_state=args['seed'])
     else:
         assert False
 
