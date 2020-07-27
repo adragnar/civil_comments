@@ -17,6 +17,7 @@ import sklearn
 
 import re
 import tqdm
+import socket
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -149,6 +150,7 @@ def generate_dataloader(d, elg, nbatch=1, t=None):
 #Word Embeddings/Processing
 def load_word_vectors(fname):
     def get_nvecs():
+        hostname = socket.gethostname()
         if hostname == "Roberts-MacBook-Pro.local":
             return 100
         else:
