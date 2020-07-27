@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 from os.path import join
 
@@ -61,6 +62,9 @@ def evaluate_model(train, test, base, model, hid_layers=None,  ltype='ACC'):
 def main(id, expdir, data_fname, args, algo_args):
     ''':param env_splits: the envrionments, infinite possible, each binary of
                           form np.array([[.1, 0.9], [0.2, 0.8], [0.9, 0.1]])'''
+
+    logger_fname = os.path.join(expdir, 'log_{}.txt'.format(id))
+    logging.basicConfig(filename=logger_fname, level=logging.DEBUG)
 
     #Set up dataset with proper embeddings
     if args['word_encoding'] == 'embed':

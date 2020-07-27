@@ -148,7 +148,7 @@ def generate_dataloader(d, elg, nbatch=1, t=None):
 
 #Word Embeddings/Processing
 def load_word_vectors(fname):
-    model = KeyedVectors.load_word2vec_format(fname, limit=int(1e6), binary=False)
+    model = KeyedVectors.load_word2vec_format(fname, limit=None, binary=False)
     vecs = model.vectors
     words = list(model.vocab.keys())
     return model, vecs, words

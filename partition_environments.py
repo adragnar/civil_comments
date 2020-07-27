@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 from os.path import join
 
@@ -50,27 +51,6 @@ def balance_sa_partitions(data, env_splits, label, seed):
         toxic = toxic.sample(n=req_t, random_state=seed)
 
     return non_toxic, toxic
-
-def compute_proportions_of_env(pe, diff_z, l_noise):
-    '''Given a probability of spurious label flip, return relative probabilites
-    of different classes. Includes option where different SA labels
-    :param diff_z bool - whetehr or not there is spurious corr with some class
-    :param l_noise: amount of label noise present (float)'''
-    if (not diff_z) and (l_noise == 0):
-        ret =  {'y0_sa1':pe, 'y1_sa1':(1 - pe)}
-    elif diff_z and (l_noise == 0):
-        ret = {'y0_sa1':pe/2, 'y1_sa1':(1 - pe)/2, 'y0_sa0':(1 - pe)/2, 'y1_sa0':pe/2}
-    elif (not diff_z) and (l_noise > 0):
-        ret = {'y0_sa1':pe * (1 - l_noise), 'y1_sa1':(1 - pe) * (1 - l_noise), \
-                'y0_sa1_l':pe * l_noise, 'y1_sa1_l':(1 - pe) * l_noise}
-    elif diff_z and (l_noise > 0):
-        ret = {'y0_sa1':pe/2 * (1 - l_noise), 'y1_sa1':(1 - pe)/2 * (1 - l_noise), 'y0_sa0':(1 - pe)/2 * (1 - l_noise), 'y1_sa0':pe/2 * (1 - l_noise), \
-                'y0_sa1_l':pe/2 * l_noise, 'y1_sa1_l':(1 - pe)/2 * l_noise, 'y0_sa0_l':(1 - pe)/2 * l_noise, 'y1_sa0_l':pe/2* l_noise}
-    else:
-        raise Exception('Not implemented combination')
-
-    assert sum(ret.values()) == 1.0
-    return ret
 
 def split_envs(src_dict, prop_dict, env_size, seed):
     '''Given two repositoreis of data that are in the desired proportions to
@@ -132,8 +112,8 @@ def partition_envs_labelshift(fname, args):
         else:
             ret = {'y0':pe * (1 - l_noise), 'y1':(1 - pe) * (1 - l_noise), \
                     'y0_l':pe * l_noise, 'y1_l':(1 - pe) * l_noise}
-
-        assert sum(ret.values()) == 1.0
+        logging.info('sum: {}'.format(str(sum(ret.values()))))
+        assert abs(sum(ret.values()) - 1.0) <= 1e-5
         return ret
 
     full_data = load_data(fname, args)
@@ -187,7 +167,7 @@ def partition_envs_cmnist(fname, args):
             ret = {'y0_sa1':pe/2 * (1 - l_noise), 'y1_sa1':(1 - pe)/2 * (1 - l_noise), 'y0_sa0':(1 - pe)/2 * (1 - l_noise), 'y1_sa0':pe/2 * (1 - l_noise), \
                     'y0_sa1_l':pe/2 * l_noise, 'y1_sa1_l':(1 - pe)/2 * l_noise, 'y0_sa0_l':(1 - pe)/2 * l_noise, 'y1_sa0_l':pe/2* l_noise}
 
-        assert sum(ret.values()) == 1.0
+        assert abs(sum(ret.values()) - 1.0) <= 1e-5
         return ret
 
     #Start Function
@@ -222,7 +202,7 @@ def partition_envs_cmnist(fname, args):
         src_props = compute_proportions_of_env(pe, args['label_noise'])
         env, data_sources = split_envs({k:data_sources[k] for k in src_props}, src_props, int(total_nsamples/nenvs), args['seed'])
         env_partitions.append(env)
-    import pdb; pdb.set_trace()
+
     return env_partitions
 
 if __name__ == '__main__':
