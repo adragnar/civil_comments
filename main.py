@@ -66,7 +66,7 @@ def main(id, expdir, data_fname, args, algo_args):
     logger_fname = os.path.join(expdir, 'log_{}.txt'.format(id))
     logging.basicConfig(filename=logger_fname, level=logging.DEBUG)
 
-    #Set up dataset with proper embeddings
+    #Get Data Embedding Function
     if args['word_encoding'] == 'embed':
         word2vec, _, _ = data_proc.load_word_vectors(setup.get_wordvecspath())
         t = data_proc.GetEmbedding(word2vec, stopwords=STOPWORDS)
@@ -83,14 +83,11 @@ def main(id, expdir, data_fname, args, algo_args):
         env_partitions = partition_environments.partition_envs_labelshift(data_fname, args)
     else:
         raise Exception('Data Partition Unimplemented')
+    train_envs, train_partition, test_partition = data_proc.process_envs( \
+                                                                 env_partitions, t)
+    print(len(train_envs), train_partition['x'].shape, test_partition['x'].shape)
 
     #Baseline Logistic Regression
-    train_partition = data_proc.ToxicityDataset(pd.concat([e for e in env_partitions[:-1]], \
-                                                ignore_index=True)[['id', 'toxicity', 'comment_text']], transform=t)[:]
-    test_partition = data_proc.ToxicityDataset(env_partitions[-1][['id', 'toxicity', 'comment_text']], transform=t)[:]
-
-    print(train_partition['x'].shape, test_partition['x'].shape)
-
     if args['base_model'] == 'logreg':
         baseline_model = LogisticRegression(fit_intercept = True, penalty = 'l2').fit(train_partition['x'], train_partition['y'])
         baseline_train_score = baseline_model.score(train_partition['x'], train_partition['y'])
@@ -101,17 +98,12 @@ def main(id, expdir, data_fname, args, algo_args):
         baseline_train_score, baseline_test_score = \
                   evaluate_model(train_partition, test_partition, base, baseline_model, \
                                    hid_layers=algo_args['hid_layers'], ltype='ACC')
-
     baseline_res = {'id':{'params':args, 'algo_params':algo_args}, \
                     'results':{'train':baseline_train_score, 'test':baseline_test_score}, \
                     'model':baseline_model}
     pickle.dump(baseline_res, open(join(expdir, '{}_baseline.pkl'.format(id)), 'wb'))
 
     #IRM Logistic Regression
-    train_envs = [data_proc.ToxicityDataset(e[['id', 'toxicity', 'comment_text']], transform=t)[:] for e in env_partitions[:-1]]
-    test_partition = data_proc.ToxicityDataset(env_partitions[-1][['id', 'toxicity', 'comment_text']], transform=t)[:]
-    print(train_envs[0]['x'].shape, test_partition['x'].shape)
-
     if args['base_model'] == 'logreg':
         base = models.LinearInvariantRiskMinimization('cls')
         irm_model, errors, penalties, losses = base.train(train_envs, args['seed'], algo_args)
