@@ -167,3 +167,14 @@ def sent_proc(txt, stopwords=[], lem=None):
     if lem is not None:
         words = {lem.lemmatize(w) for w in words}
     return words
+
+def process_envs(p_list, t):
+    '''Given a list of raw env objects, manipulate them as needed into useable
+    data objects
+    :param plist: list of envs [pd.DataFrame]'''
+    train_envs = [ToxicityDataset(e[['id', 'toxicity', 'comment_text']], transform=t)[:] for e in p_list[:-1]]
+    train_partition = ToxicityDataset(pd.concat([e for e in p_list[:-1]], \
+                                                ignore_index=True)[['id', 'toxicity', 'comment_text']], transform=t)[:]
+    test_partition = ToxicityDataset(p_list[-1][['id', 'toxicity', 'comment_text']], transform=t)[:]
+
+    return train_envs, train_partition, test_partition
