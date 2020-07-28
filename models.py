@@ -206,7 +206,7 @@ class LinearInvariantRiskMinimization(IRMBase):
 
         return phi, errors, penalties, losses
 
-    def predict(self, data, phi_params, hid_layers=100):
+    def predict(self, data, phi_params, args={}):
         '''
         :param data: the dataset (nparray)
         :param phi_params: The state dict of the MLP'''
@@ -296,7 +296,7 @@ class InvariantRiskMinimization(IRMBase):
 
         return phi.state_dict(), errors, penalties, losses
 
-    def predict(self, data, phi_params, hid_layers=100):
+    def predict(self, data, phi_params, args={}):
         '''
         :param data: the dataset (nparray)
         :param phi_params: The state dict of the MLP'''
@@ -304,6 +304,6 @@ class InvariantRiskMinimization(IRMBase):
         if data.shape[0] == 0:
             return pd.DataFrame()
 
-        phi = BaseMLP(data.shape[1], hid_layers)
+        phi = BaseMLP(data.shape[1], args['hid_layers'])
         phi.load_state_dict(phi_params)
         return pd.DataFrame(phi(make_tensor(data)).detach().numpy())

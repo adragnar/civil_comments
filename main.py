@@ -39,19 +39,51 @@ import ref
 import setup_params as setup
 import partition_environments
 
-def evaluate_model(train, test, base, model, hid_layers=None,  ltype='ACC'):
+def evaluate_ensemble(train, test, base, model=None, hid_layers=None, ltype='ACC'):
+    '''Given an ensemble of models and its data, evaluate
+    :param trainenvs: list of dictionaries of np arrays, each which is
+    the dataset for a train env {'x':arr, 'y':arr}
+    :param testenv: dict of np arrays dataset for a test env  {'x':arr, 'y':arr}
+    :param base: list of trained models used for prediction
+    :param model: the model_params needed for .predict method (neeed for all but sklearn)'''
+
+    train_preds = []
+    test_preds = []
+    if type(base) == list:  ##In case we're using sklearn bb classifiers
+        assert 'sklearn' in str(type(base[0]))
+        for b in base:
+            train_preds.append(b.predict(train['x']))
+            test_preds.append(b.predict(test['x']))
+
+    else:  #Assuming these will be my standard interface fucntions
+        for m in models:
+            train_preds.append(base.predict(train['x'], m, args={'hid_layers':hid_layers}))
+            test_preds.append(base.predict(test['x'], m, args={'hid_layers':hid_layers}))
+
+    train_logits = np.mean(train_preds, axis=0)
+    test_logits = np.mean(test_preds, axis=0)
+
+    train_labels = train['y']
+    test_labels = test['y']
+
+    train_acc = ref.compute_loss(np.expand_dims(train_logits, axis=1), train_labels, ltype=ltype)
+    test_acc = ref.compute_loss(np.expand_dims(test_logits, axis=1), test_labels, ltype=ltype)
+    return train_acc, test_acc
+
+
+def evaluate_model(train, test, base, model=None, hid_layers=None, ltype='ACC'):
     '''Given a model and its data, evaluate
     :param trainenvs: list of dictionaries of np arrays, each which is
     the dataset for a train env {'x':arr, 'y':arr}
     :param testenv: dict of np arrays dataset for a test env  {'x':arr, 'y':arr}
     :param model: trained mdoel used for prediction
     :param base: the model needed for prediction method'''
-    if hid_layers is not None:
-        train_logits = base.predict(train['x'], model, hid_layers=hid_layers)
-        test_logits = base.predict(test['x'], model, hid_layers=hid_layers)
+    if 'sklearn' in str(type(base)):
+        train_logits = base.predict(train['x'])
+        test_logits = base.predict(test['x'])
     else:
-        train_logits = base.predict(train['x'], model)
-        test_logits = base.predict(test['x'], model)
+        train_logits = base.predict(train['x'], model, args={'hid_layers':hid_layers})
+        test_logits = base.predict(test['x'], model, args={'hid_layers':hid_layers})
     train_labels = train['y']
     test_labels = test['y']
 
@@ -89,19 +121,42 @@ def main(id, expdir, data_fname, args, algo_args):
 
     #Baseline Logistic Regression
     if args['base_model'] == 'logreg':
-        baseline_model = LogisticRegression(fit_intercept = True, penalty = 'l2').fit(train_partition['x'], train_partition['y'])
+        baseline_model = LogisticRegression(fit_intercept=True, penalty='l2', C=float(1/algo_args['l2_reg'])).fit(train_partition['x'], train_partition['y'])
         baseline_train_score = baseline_model.score(train_partition['x'], train_partition['y'])
         baseline_test_score = baseline_model.score(test_partition['x'], test_partition['y'])
     elif args['base_model'] == 'mlp':
         base = models.MLP()
         baseline_model, _ = base.run(train_partition['x'], train_partition['y'], algo_args)
         baseline_train_score, baseline_test_score = \
-                  evaluate_model(train_partition, test_partition, base, baseline_model, \
+                  evaluate_model(train_partition, test_partition, base, model=baseline_model, \
                                    hid_layers=algo_args['hid_layers'], ltype='ACC')
     baseline_res = {'id':{'params':args, 'algo_params':algo_args}, \
                     'results':{'train':baseline_train_score, 'test':baseline_test_score}, \
                     'model':baseline_model}
     pickle.dump(baseline_res, open(join(expdir, '{}_baseline.pkl'.format(id)), 'wb'))
+
+    #Ensemble Logistic Regression
+    ensemble_models = []
+    if args['base_model'] == 'logreg':
+        for e in train_envs:
+            ensemble_models.append(LogisticRegression(fit_intercept=True, penalty='l2', C=float(1/algo_args['l2_reg'])).fit(e['x'], e['y']))
+        ensemble_train_score, ensemble_test_score = \
+              evaluate_ensemble(train_partition, test_partition, ensemble_models, \
+                               hid_layers=algo_args['hid_layers'], ltype='ACC')
+    elif args['base_model'] == 'mlp':
+        for e in train_envs:
+            base = models.MLP()
+            bm = base.run(e['x'], e['y'], algo_args)
+            ensemble_models.append(bm)
+        ensemble_train_score, ensemble_test_score = \
+              evaluate_ensemble(train_partition, test_partition, base, model=ensemble_models, \
+                               hid_layers=algo_args['hid_layers'], ltype='ACC')
+
+    ensemble_res = {'id':{'params':args, 'algo_params':algo_args}, \
+                    'results':{'train':ensemble_train_score, 'test':ensemble_test_score}, \
+                    'model':ensemble_models}
+    pickle.dump(ensemble_res, open(join(expdir, '{}_ensemble.pkl'.format(id)), 'wb'))
+
 
     #IRM Logistic Regression
     if args['base_model'] == 'logreg':
@@ -110,14 +165,14 @@ def main(id, expdir, data_fname, args, algo_args):
         irm_train_acc, irm_test_acc = \
              evaluate_model({'x': np.concatenate([train_envs[i]['x'] for i in range(len(train_envs))]), \
                              'y':np.concatenate([train_envs[i]['y'] for i in range(len(train_envs))])}, \
-                             test_partition, base, irm_model, ltype='ACC')
+                             test_partition, base, model=irm_model, ltype='ACC')
     elif args['base_model'] == 'mlp':
         base = models.InvariantRiskMinimization('cls')
         irm_model, errors, penalties, losses = base.train(train_envs, args['seed'], algo_args)
         irm_train_acc, irm_test_acc = \
              evaluate_model({'x': np.concatenate([train_envs[i]['x'] for i in range(len(train_envs))]), \
                              'y':np.concatenate([train_envs[i]['y'] for i in range(len(train_envs))])}, \
-                             test_partition, base, irm_model, hid_layers=algo_args['hid_layers'], ltype='ACC')
+                             test_partition, base, model=irm_model, hid_layers=algo_args['hid_layers'], ltype='ACC')
 
     irm_res = {'id':{'params':args, 'algo_params':algo_args}, \
                     'results':{'train':irm_train_acc, 'test':irm_test_acc}, \
