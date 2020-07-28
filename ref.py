@@ -19,9 +19,6 @@ from sklearn.linear_model import Lasso, LinearRegression, LogisticRegression
 import torch
 import torch.nn.functional as F
 
-warnings.simplefilter(action='ignore', category=FutureWarning)
-warnings.simplefilter(action='ignore', category=RuntimeWarning)
-
 def pred_binarize(v):
     '''Convert all values to 0 if <0.5, 1 otherwise'''
     def thresh(x):
@@ -38,7 +35,7 @@ def compute_loss(pred, ground, ltype='MSE'):
         return F.binary_cross_entropy_with_logits(torch.tensor(pred).float(), torch.tensor(ground).float()).numpy()
     if ltype == 'ACC':
         pred = pred_binarize(pred)
-        return 1 - F.mse_loss(torch.tensor(pred).float(), torch.tensor(ground).float()).numpy()
+        return 1 - F.mse_loss(torch.tensor(pred.squeeze()).float(), torch.tensor(ground.squeeze()).float()).numpy()
 
 def make_tensor(arr):
     '''Convert np array into a float tensor'''
