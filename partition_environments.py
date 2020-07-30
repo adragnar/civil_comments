@@ -206,6 +206,7 @@ def partition_envs_cmnist(fname, args):
 
     return env_partitions
 
+
 if __name__ == '__main__':
     #Generate data for hyperparam tuning
     parser = argparse.ArgumentParser(description='Params')

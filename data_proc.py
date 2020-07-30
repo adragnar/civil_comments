@@ -148,6 +148,22 @@ def generate_dataloader(d, elg, nbatch=1, t=None):
 
 
 #Word Embeddings/Processing
+import nltk
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+STOPWORDS = set(stopwords.words('english'))
+
+def get_word_transform(e_type, fpath):
+    if e_type == 'embed':
+        word2vec, _, _ = load_word_vectors(fpath)
+        t = GetEmbedding(word2vec, stopwords=STOPWORDS)
+    elif e_type == 'BOW':
+        word_freq = pickle.load(open(fpath, 'rb'))
+        vocabulary = sorted([x for x in word_freq if ((word_freq[x] > 20) and (word_freq[x] < 1e3))])
+        vocabulary = {vocabulary[i]:i for i in range(len(vocabulary))}
+        t = GetBOW(vocabulary, lem=WordNetLemmatizer(), stopwords=STOPWORDS)
+    return t 
+
 def load_word_vectors(fname):
     def get_nvecs():
         hostname = socket.gethostname()
@@ -167,14 +183,3 @@ def sent_proc(txt, stopwords=[], lem=None):
     if lem is not None:
         words = {lem.lemmatize(w) for w in words}
     return words
-
-def process_envs(p_list, t):
-    '''Given a list of raw env objects, manipulate them as needed into useable
-    data objects
-    :param plist: list of envs [pd.DataFrame]'''
-    train_envs = [ToxicityDataset(e[['id', 'toxicity', 'comment_text']], transform=t)[:] for e in p_list[:-1]]
-    train_partition = ToxicityDataset(pd.concat([e for e in p_list[:-1]], \
-                                                ignore_index=True)[['id', 'toxicity', 'comment_text']], transform=t)[:]
-    test_partition = ToxicityDataset(p_list[-1][['id', 'toxicity', 'comment_text']], transform=t)[:]
-
-    return train_envs, train_partition, test_partition

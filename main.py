@@ -27,10 +27,6 @@ from sklearn.linear_model import Lasso, LinearRegression, LogisticRegression
 import torch
 import torch.nn.functional as F
 
-import nltk
-from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer
-STOPWORDS = set(stopwords.words('english'))
 
 import algo_hyperparams
 import data_proc
@@ -39,7 +35,7 @@ import ref
 import setup_params as setup
 import partition_environments
 
-def evaluate_ensemble(train, test, base, model=None, hid_layers=None, ltype='ACC'):
+def evaluate_ensemble(data, base, model=None, hid_layers=None, ltype='ACC'):
     '''Given an ensemble of models and its data, evaluate
     :param trainenvs: list of dictionaries of np arrays, each which is
     the dataset for a train env {'x':arr, 'y':arr}
@@ -47,49 +43,36 @@ def evaluate_ensemble(train, test, base, model=None, hid_layers=None, ltype='ACC
     :param base: list of trained models used for prediction
     :param model: the model_params needed for .predict method (neeed for all but sklearn)'''
 
-    train_preds = []
-    test_preds = []
+    preds = []
     if type(base) == list:  ##In case we're using sklearn bb classifiers
         assert 'sklearn' in str(type(base[0]))
         for b in base:
-            train_preds.append(b.predict(train['x']))
-            test_preds.append(b.predict(test['x']))
+            preds.append(b.predict(data['x']))
 
     else:  #Assuming these will be my standard interface fucntions
         for m in models:
-            train_preds.append(base.predict(train['x'], m, args={'hid_layers':hid_layers}))
-            test_preds.append(base.predict(test['x'], m, args={'hid_layers':hid_layers}))
+            preds.append(base.predict(data['x'], m, args={'hid_layers':hid_layers}))
 
-    train_logits = np.mean(train_preds, axis=0)
-    test_logits = np.mean(test_preds, axis=0)
+    logits = np.mean(preds, axis=0)
+    labels = data['y']
 
-    train_labels = train['y']
-    test_labels = test['y']
-
-    train_acc = ref.compute_loss(np.expand_dims(train_logits, axis=1), train_labels, ltype=ltype)
-    test_acc = ref.compute_loss(np.expand_dims(test_logits, axis=1), test_labels, ltype=ltype)
-    return train_acc, test_acc
+    acc = ref.compute_loss(np.expand_dims(logits, axis=1), labels, ltype=ltype)
+    return acc
 
 
-def evaluate_model(train, test, base, model=None, hid_layers=None, ltype='ACC'):
+def evaluate_model(data, base, model=None, hid_layers=None, ltype='ACC'):
     '''Given a model and its data, evaluate
-    :param trainenvs: list of dictionaries of np arrays, each which is
-    the dataset for a train env {'x':arr, 'y':arr}
-    :param testenv: dict of np arrays dataset for a test env  {'x':arr, 'y':arr}
+    :param data: dict of np arrays dataset for a test env  {'x':arr, 'y':arr}
     :param model: trained mdoel used for prediction
     :param base: the model needed for prediction method'''
     if 'sklearn' in str(type(base)):
-        train_logits = base.predict(train['x'])
-        test_logits = base.predict(test['x'])
+        logits = base.predict(data['x'])
     else:
-        train_logits = base.predict(train['x'], model, args={'hid_layers':hid_layers})
-        test_logits = base.predict(test['x'], model, args={'hid_layers':hid_layers})
-    train_labels = train['y']
-    test_labels = test['y']
+        logits = base.predict(data['x'], model, args={'hid_layers':hid_layers})
+    labels = data['y']
 
-    train_acc = ref.compute_loss(np.expand_dims(train_logits, axis=1), train_labels, ltype=ltype)
-    test_acc = ref.compute_loss(np.expand_dims(test_logits, axis=1), test_labels, ltype=ltype)
-    return train_acc, test_acc
+    acc = ref.compute_loss(np.expand_dims(logits, axis=1), labels, ltype=ltype)
+    return acc
 
 def main(id, expdir, data_fname, args, algo_args):
     ''':param env_splits: the envrionments, infinite possible, each binary of
@@ -99,14 +82,11 @@ def main(id, expdir, data_fname, args, algo_args):
     logging.basicConfig(filename=logger_fname, level=logging.DEBUG)
 
     #Get Data Embedding Function
+
     if args['word_encoding'] == 'embed':
-        word2vec, _, _ = data_proc.load_word_vectors(setup.get_wordvecspath())
-        t = data_proc.GetEmbedding(word2vec, stopwords=STOPWORDS)
+        t = data_proc.get_word_transform(args['word_encoding'], setup.get_wordvecspath())
     elif args['word_encoding'] == 'BOW':
-        word_freq = pickle.load(open(setup.get_wordfreqpath(), 'rb'))
-        vocabulary = sorted([x for x in word_freq if ((word_freq[x] > 20) and (word_freq[x] < 1e3))])
-        vocabulary = {vocabulary[i]:i for i in range(len(vocabulary))}
-        t = data_proc.GetBOW(vocabulary, lem=WordNetLemmatizer(), stopwords=STOPWORDS)
+        t = data_proc.get_word_transform(args['word_encoding'], setup.get_wordfreqpath())
 
     #Get Environment Data
     if args['exptype'] == 'cmnist':
@@ -115,10 +95,15 @@ def main(id, expdir, data_fname, args, algo_args):
         env_partitions = partition_environments.partition_envs_labelshift(data_fname, args)
     else:
         raise Exception('Data Partition Unimplemented')
-    train_envs, train_partition, test_partition = data_proc.process_envs( \
-                                                                 env_partitions, t)
-    print(len(train_envs), train_partition['x'].shape, test_partition['x'].shape)
 
+    train_envs = [data_proc.ToxicityDataset(e[['id', 'toxicity', 'comment_text']], transform=t)[:] for e in env_partitions[:-1]]
+    train_partition = data_proc.ToxicityDataset(pd.concat([e for e in env_partitions[:-1]], \
+                                                ignore_index=True)[['id', 'toxicity', 'comment_text']], transform=t)[:]
+    test_partition = data_proc.ToxicityDataset(env_partitions[-1][['id', 'toxicity', 'comment_text']], transform=t)[:]
+
+
+    print(len(train_envs), train_partition['x'].shape, test_partition['x'].shape)
+    
     #Baseline Logistic Regression
     if args['base_model'] == 'logreg':
         baseline_model = LogisticRegression(fit_intercept=True, penalty='l2', C=float(1/algo_args['l2_reg'])).fit(train_partition['x'], train_partition['y'])
@@ -127,9 +112,12 @@ def main(id, expdir, data_fname, args, algo_args):
     elif args['base_model'] == 'mlp':
         base = models.MLP()
         baseline_model, _ = base.run(train_partition['x'], train_partition['y'], algo_args)
-        baseline_train_score, baseline_test_score = \
-                  evaluate_model(train_partition, test_partition, base, model=baseline_model, \
+        baseline_train_score = evaluate_model(train_partition, base, model=baseline_model, \
                                    hid_layers=algo_args['hid_layers'], ltype='ACC')
+        baseline_test_score = evaluate_model(test_partition, base, model=baseline_model, \
+                                   hid_layers=algo_args['hid_layers'], ltype='ACC')
+
+
     baseline_res = {'id':{'params':args, 'algo_params':algo_args}, \
                     'results':{'train':baseline_train_score, 'test':baseline_test_score}, \
                     'model':baseline_model}
@@ -140,17 +128,20 @@ def main(id, expdir, data_fname, args, algo_args):
     if args['base_model'] == 'logreg':
         for e in train_envs:
             ensemble_models.append(LogisticRegression(fit_intercept=True, penalty='l2', C=float(1/algo_args['l2_reg'])).fit(e['x'], e['y']))
-        ensemble_train_score, ensemble_test_score = \
-              evaluate_ensemble(train_partition, test_partition, ensemble_models, \
-                               hid_layers=algo_args['hid_layers'], ltype='ACC')
+        ensemble_train_score = evaluate_ensemble(train_partition, ensemble_models, \
+                                   hid_layers=algo_args['hid_layers'], ltype='ACC')
+        ensemble_test_score = evaluate_ensemble(test_partition, ensemble_models, \
+                                   hid_layers=algo_args['hid_layers'], ltype='ACC')
+
     elif args['base_model'] == 'mlp':
         for e in train_envs:
             base = models.MLP()
             bm = base.run(e['x'], e['y'], algo_args)
             ensemble_models.append(bm)
-        ensemble_train_score, ensemble_test_score = \
-              evaluate_ensemble(train_partition, test_partition, base, model=ensemble_models, \
+        ensemble_train_score = evaluate_ensemble(train_partition, base, model=ensemble_models, \
                                hid_layers=algo_args['hid_layers'], ltype='ACC')
+        ensemble_test_score = evaluate_ensemble(test_partition, base, model=ensemble_models, \
+                         hid_layers=algo_args['hid_layers'], ltype='ACC')
 
     ensemble_res = {'id':{'params':args, 'algo_params':algo_args}, \
                     'results':{'train':ensemble_train_score, 'test':ensemble_test_score}, \
@@ -162,17 +153,18 @@ def main(id, expdir, data_fname, args, algo_args):
     if args['base_model'] == 'logreg':
         base = models.LinearInvariantRiskMinimization('cls')
         irm_model, errors, penalties, losses = base.train(train_envs, args['seed'], algo_args)
-        irm_train_acc, irm_test_acc = \
-             evaluate_model({'x': np.concatenate([train_envs[i]['x'] for i in range(len(train_envs))]), \
+        irm_train_acc =  evaluate_model({'x': np.concatenate([train_envs[i]['x'] for i in range(len(train_envs))]), \
                              'y':np.concatenate([train_envs[i]['y'] for i in range(len(train_envs))])}, \
-                             test_partition, base, model=irm_model, ltype='ACC')
+                             base, model=irm_model, ltype='ACC')
+        irm_test_acc = evaluate_model(test_partition, base, model=irm_model, ltype='ACC')
+
     elif args['base_model'] == 'mlp':
         base = models.InvariantRiskMinimization('cls')
         irm_model, errors, penalties, losses = base.train(train_envs, args['seed'], algo_args)
-        irm_train_acc, irm_test_acc = \
-             evaluate_model({'x': np.concatenate([train_envs[i]['x'] for i in range(len(train_envs))]), \
+        irm_train_acc =  evaluate_model({'x': np.concatenate([train_envs[i]['x'] for i in range(len(train_envs))]), \
                              'y':np.concatenate([train_envs[i]['y'] for i in range(len(train_envs))])}, \
-                             test_partition, base, model=irm_model, hid_layers=algo_args['hid_layers'], ltype='ACC')
+                             base, model=irm_model, hid_layers=args['hid_layers'], ltype='ACC')
+        irm_test_acc = evaluate_model(test_partition, base, model=irm_model, hid_layers=args['hid_layers'], ltype='ACC')
 
     irm_res = {'id':{'params':args, 'algo_params':algo_args}, \
                     'results':{'train':irm_train_acc, 'test':irm_test_acc}, \
