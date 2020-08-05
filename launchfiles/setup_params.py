@@ -153,6 +153,8 @@ def setup():
     sys.stdout.write(expdir)
     sys.stdout.flush()
 
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Params')
     parser.add_argument("hparams", type=int, default=None)
