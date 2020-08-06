@@ -61,8 +61,8 @@ class MLP(BaseMLP):
         optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'])
 
         for step in tqdm(range(args['n_iterations'])):
-            logits = model(make_tensor(data))
-            labels = make_tensor(y_all)
+            logits = model(make_tensor(data)).squeeze()
+            labels = make_tensor(y_all).squeeze()
             loss = nn.functional.binary_cross_entropy_with_logits(logits, \
                                                                   labels)
             weight_norm = model.weight_norm()
@@ -96,7 +96,7 @@ class MLP(BaseMLP):
 
         model = BaseMLP(data.shape[1], hid_layers)
         model.load_state_dict(model_params)
-        return pd.DataFrame(model(make_tensor(data)).detach().numpy())
+        return pd.DataFrame(model(make_tensor(data)).detach().numpy().squeeze())
 
 
 class IRMBase(ABC):
@@ -161,8 +161,8 @@ class LinearInvariantRiskMinimization(IRMBase):
             for i, e in enumerate(envs):
                 e_comp[i] = {}
                 data, y_all = e['x'], e['y']
-                logits = make_tensor(data) @ phi @ w #Note - for given loss this is raw output
-                labels = make_tensor(y_all)
+                logits = (make_tensor(data) @ phi @ w).squeeze() #Note - for given loss this is raw output
+                labels = make_tensor(y_all).squeeze()
                 e_comp[i]['nll'] = self.mean_nll(logits, labels)
                 e_comp[i]['acc'] = self.mean_accuracy(logits, labels)
                 e_comp[i]['penalty'] = self.penalty(logits, labels)
@@ -219,7 +219,7 @@ class LinearInvariantRiskMinimization(IRMBase):
 
         phi = phi_params.detach().numpy()
         w = np.ones([phi.shape[1], 1])
-        return sigmoid(data @ (phi @ w).ravel())
+        return sigmoid(data @ (phi @ w).ravel()).squeeze()
 
 class InvariantRiskMinimization(IRMBase):
     """Object Wrapper around IRM"""
@@ -249,8 +249,8 @@ class InvariantRiskMinimization(IRMBase):
                 # import pdb; pdb.set_trace()
                 # d = make_tensor(data.loc[e_in].values)
                 # import pdb; pdb.set_trace()
-                logits = phi(make_tensor(data))
-                labels = make_tensor(y_all)
+                logits = phi(make_tensor(data)).squeeze()
+                labels = make_tensor(y_all).squeeze()
                 e_comp[i]['nll'] = self.mean_nll(logits, labels)
                 e_comp[i]['acc'] = self.mean_accuracy(logits, labels)
                 e_comp[i]['penalty'] = self.penalty(logits, labels)
@@ -306,4 +306,4 @@ class InvariantRiskMinimization(IRMBase):
 
         phi = BaseMLP(data.shape[1], args['hid_layers'])
         phi.load_state_dict(phi_params)
-        return pd.DataFrame(phi(make_tensor(data)).detach().numpy())
+        return pd.DataFrame(phi(make_tensor(data)).detach().numpy().squeeze())
