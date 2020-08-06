@@ -66,13 +66,15 @@ class ToxicityDataset(Dataset):
         return len(self.dataset)
 
     def __getitem__(self, idx):
+        # print(idx)
         sample = self.dataset.loc[idx, 'comment_text']
         if self.transform:
-            sample = self.transform(sample)
-
-        target = self.dataset.loc[idx, 'toxicity']
-
-        return {'x':sample, 'y':np.expand_dims(target.values, axis=1)} #Fix this without hack
+            sample = self.transform(sample).astype(np.float64)
+        target = self.dataset.loc[idx, 'toxicity'].astype(np.float64)
+        if 'numpy' not in str(type(target)):
+            target = target.values
+        #
+        return {'x':sample, 'y':target} #Fix this without hack
 
 class GetEmbedding(object):
     """Given a sentence of text, generate sentence embedding
@@ -162,7 +164,7 @@ def get_word_transform(e_type, fpath):
         vocabulary = sorted([x for x in word_freq if ((word_freq[x] > 20) and (word_freq[x] < 1e3))])
         vocabulary = {vocabulary[i]:i for i in range(len(vocabulary))}
         t = GetBOW(vocabulary, lem=WordNetLemmatizer(), stopwords=STOPWORDS)
-    return t 
+    return t
 
 def load_word_vectors(fname):
     def get_nvecs():
