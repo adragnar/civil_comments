@@ -91,14 +91,16 @@ class GetEmbedding(object):
     def __call__(self, sample):
         ''':param sample: pd.Series'''
         if type(sample) == str:
-            words = sample.split(" ")
-            words = [w for w in words if w.lower() not in self.stopwords]
+            words = sent_proc(sample, stopwords=self.stopwords)
+            if len(words) == 0:
+                words = set(np.zeros(300))
             sent_embedding = np.sum([self.model[w] if w in self.model else self.unknown_embed for w in words], axis = 0)
         elif type(sample) == pd.Series:
             sent_embedding = np.zeros((len(sample), 300))
             for i, txt in enumerate(sample):
-                words = txt.split(" ")
-                words = [w for w in words if w.lower() not in self.stopwords]
+                words = sent_proc(txt, stopwords=self.stopwords)
+                if len(words) == 0:
+                    words = set(np.zeros(300))
                 sent_embedding[i, :] = np.sum([self.model[w] if w in self.model else self.unknown_embed for w in words], axis = 0)
 
         return sent_embedding
