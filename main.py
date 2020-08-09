@@ -53,10 +53,10 @@ def evaluate_ensemble(data, base, model=None, hid_layers=None, ltype='ACC'):
         for m in models:
             preds.append(base.predict(data['x'], m, args={'hid_layers':hid_layers}))
 
-    logits = np.mean(preds, axis=0)
+    avg_pred = np.mean(preds, axis=0)
     labels = data['y']
 
-    acc = ref.compute_loss(np.expand_dims(logits, axis=1), labels, ltype=ltype)
+    acc = ref.compute_loss(avg_pred, labels, ltype=ltype)
     return acc
 
 
@@ -66,12 +66,11 @@ def evaluate_model(data, base, model=None, hid_layers=None, ltype='ACC'):
     :param model: trained mdoel used for prediction
     :param base: the model needed for prediction method'''
     if 'sklearn' in str(type(base)):
-        logits = base.predict(data['x'])
+        preds = base.predict(data['x'])
     else:
-        logits = base.predict(data['x'], model, args={'hid_layers':hid_layers})
+        preds = base.predict(data['x'], model, args={'hid_layers':hid_layers})
     labels = data['y']
-
-    acc = ref.compute_loss(np.expand_dims(logits, axis=1), labels, ltype=ltype)
+    acc = ref.compute_loss(preds, labels, ltype=ltype)
     return acc
 
 def main(id, expdir, data_fname, args, algo_args):
@@ -103,7 +102,7 @@ def main(id, expdir, data_fname, args, algo_args):
 
 
     print(len(train_envs), train_partition['x'].shape, test_partition['x'].shape)
-    
+
     #Baseline Logistic Regression
     if args['base_model'] == 'logreg':
         baseline_model = LogisticRegression(fit_intercept=True, penalty='l2', C=float(1/algo_args['l2_reg'])).fit(train_partition['x'], train_partition['y'])
@@ -111,12 +110,12 @@ def main(id, expdir, data_fname, args, algo_args):
         baseline_test_score = baseline_model.score(test_partition['x'], test_partition['y'])
     elif args['base_model'] == 'mlp':
         base = models.MLP()
-        baseline_model, _ = base.run(train_partition['x'], train_partition['y'], algo_args)
+        baseline_model, _ = base.run(train_partition, algo_args)
         baseline_train_score = evaluate_model(train_partition, base, model=baseline_model, \
                                    hid_layers=algo_args['hid_layers'], ltype='ACC')
         baseline_test_score = evaluate_model(test_partition, base, model=baseline_model, \
                                    hid_layers=algo_args['hid_layers'], ltype='ACC')
-
+        print(baseline_train_score, baseline_test_score)
 
     baseline_res = {'id':{'params':args, 'algo_params':algo_args}, \
                     'results':{'train':baseline_train_score, 'test':baseline_test_score}, \
@@ -136,7 +135,7 @@ def main(id, expdir, data_fname, args, algo_args):
     elif args['base_model'] == 'mlp':
         for e in train_envs:
             base = models.MLP()
-            bm = base.run(e['x'], e['y'], algo_args)
+            bm = base.run(e, algo_args)
             ensemble_models.append(bm)
         ensemble_train_score = evaluate_ensemble(train_partition, base, model=ensemble_models, \
                                hid_layers=algo_args['hid_layers'], ltype='ACC')
