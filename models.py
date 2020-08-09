@@ -96,7 +96,9 @@ class MLP(BaseMLP):
 
         model = BaseMLP(data.shape[1], hid_layers)
         model.load_state_dict(model_params)
-        return pd.DataFrame(model(make_tensor(data)).detach().numpy())
+        logits = model(make_tensor(data))
+        preds = nn.functional.sigmoid(logits).detach().numpy()
+        return pd.DataFrame(preds)
 
 
 class IRMBase(ABC):
@@ -306,4 +308,6 @@ class InvariantRiskMinimization(IRMBase):
 
         phi = BaseMLP(data.shape[1], args['hid_layers'])
         phi.load_state_dict(phi_params)
-        return pd.DataFrame(phi(make_tensor(data)).detach().numpy())
+        logits = phi(make_tensor(data))
+        preds = nn.functional.sigmoid(logits).detach().numpy()
+        return pd.DataFrame(preds)
