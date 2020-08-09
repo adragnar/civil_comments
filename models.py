@@ -49,18 +49,17 @@ class BaseMLP(nn.Module):
 
 
 class MLP(BaseMLP):
-    '''Wrapper around BaseMLP class to use as standalone prediction model'''
+    '''Wrapper around BaseMLP class to use as standalone prediction model
+       :param data: if batching=False, dstructs {'x':data (npArray), 'y':labels (npArray)}.
+                    if true pytorch dataloader with {'x':np, 'y':np} as batches'''
     def __init__(self):
         pass
 
-    def run(self, data, y_all, args):
+    def run(self, data, args, batching=False):
+        ''':param data: if batching=False, dstructs {'x':data (npArray), 'y':labels (npArray)}.
+                        if true pytorch dataloader with {'x':np, 'y':np} as batches'''
 
-        losses = []
-        dim_x = data.shape[1]
-        model = BaseMLP(dim_x, args['hid_layers'])
-        optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'])
-
-        for step in tqdm(range(args['n_iterations'])):
+        def update_params(data, y_all, model, optim, l2_reg=None):
             logits = model(make_tensor(data)).squeeze()
             labels = make_tensor(y_all).squeeze()
             loss = nn.functional.binary_cross_entropy_with_logits(logits, \
@@ -72,6 +71,26 @@ class MLP(BaseMLP):
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
+            return loss
+
+        if batching:
+            dim_x = dim(data)
+        else:
+            dim_x = data['x'].shape[1]
+
+        losses = []
+        model = BaseMLP(dim_x, args['hid_layers'])
+        optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'])
+
+        for step in tqdm(range(args['n_iterations'])):
+            if batching:
+                for idx, mbatch in data:
+                    loss = update_params(mbatch['x'], mbatch['y'], model, \
+                                         optimizer, l2_reg=args['l2_reg'])
+            else:
+                loss = update_params(data['x'], data['y'], model, \
+                                     optimizer, l2_reg=args['l2_reg'])
+                print(loss)
 
             #Printing and Logging
             if step % 1000 == 0:
@@ -86,20 +105,20 @@ class MLP(BaseMLP):
         model.load_state_dict(model_params)
         return model.weight_norm()
 
-    def predict(self, data, model_params, hid_layers=100):
+    def predict(self, data, model_params, args={}):
         '''
         :param data: the dataset (nparray)
-        :param phi_params: The state dict of the MLP'''
+        :param phi_params: The state dict of the MLP
+        :param args - dict with one key, hid_layers'''
         #Handle case of no data
         if data.shape[0] == 0:
             return pd.DataFrame()
 
-        model = BaseMLP(data.shape[1], hid_layers)
+        model = BaseMLP(data.shape[1], args['hid_layers'])
         model.load_state_dict(model_params)
         logits = model(make_tensor(data))
         preds = nn.functional.sigmoid(logits).detach().numpy()
         return pd.DataFrame(preds)
-
 
 class IRMBase(ABC):
     '''Base class for all IRM implementations'''
@@ -139,26 +158,14 @@ class LinearInvariantRiskMinimization(IRMBase):
     def __init__(self, ptype):
         super().__init__(ptype)
 
-    def train(self, envs, seed, args):
-        ''':param envs: list of training env data structures, of form
-                         {'x':data (npArray), 'y':labels (npArray)}'''
-        dim_x = envs[0]['x'].shape[1]
+    def train(self, envs, seed, args, batching=False):
+        ''':param envs: if batching=False two possibilities list of training env
+                        dstructs {'x':data (npArray), 'y':labels (npArray)}.
+                        If true list of dataloaders of each envs'''
 
-        errors = []
-        penalties = []
-        losses = []
-
-        phi = torch.nn.Parameter(torch.empty(dim_x, \
-                                            args['hid_layers']).normal_(\
-                                            generator=torch.manual_seed(seed)))
-        w = torch.ones(args['hid_layers'], 1)
-        w.requires_grad = True
-        optimizer = torch.optim.Adam([phi], lr=args['lr'])
-
-        logging.info('[step, train nll, train acc, train penalty, test acc]')
-
-        #Start the training loop
-        for step in tqdm(range(args['n_iterations'])):
+        def update_params(envs, model, optimizer, args):
+            ''':param envs: list of training env data structures, of form
+                             {'x':data (npArray), 'y':labels (npArray)}'''
             e_comp = {}
             for i, e in enumerate(envs):
                 e_comp[i] = {}
@@ -188,11 +195,46 @@ class LinearInvariantRiskMinimization(IRMBase):
             if penalty_weight > 1.0: # Rescale big loss
                 loss /= penalty_weight
 
-            #Do the backprop
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
+            return loss, train_nll, train_acc, train_penalty
 
+        #######
+        if batching:
+            dim_x = dim(envs[0])
+        else:
+            dim_x = envs[0]['x'].shape[1]
+
+        errors = []
+        penalties = []
+        losses = []
+
+        phi = torch.nn.Parameter(torch.empty(dim_x, \
+                                            args['hid_layers']).normal_(\
+                                            generator=torch.manual_seed(seed)))
+        w = torch.ones(args['hid_layers'], 1)
+        w.requires_grad = True
+        optimizer = torch.optim.Adam([phi], lr=args['lr'])
+
+        logging.info('[step, train nll, train acc, train penalty, test acc]')
+
+        #Start the training loop
+        for step in tqdm(range(args['n_iterations'])):
+            if batching:
+                nbatch = math.ceil((len(envs[0])/envs[0].batch_size))  #Assume all envs have the same #batches/iter
+                for i in range(nbatch):
+                    input_envs = [next(dl) for dl in envs]
+                    loss, train_nll, train_acc, train_penalty = \
+                              update_params(input_envs, phi, optimizer, {'l2_reg':args['l2_reg'], \
+                                                'pen_wgt':args['pen_wgt'], \
+                                                'penalty_anneal_iters':args['penalty_anneal_iters']})
+            else:
+                loss, train_nll, train_acc, train_penalty = \
+                              update_params(envs, phi, optimizer, {'l2_reg':args['l2_reg'], \
+                                            'pen_wgt':args['pen_wgt'], \
+                                            'penalty_anneal_iters':args['penalty_anneal_iters']})
+                print(loss)
             #Printing and Logging
             if step % 1000 == 0:
                 logging.info([np.int32(step),
@@ -223,6 +265,7 @@ class LinearInvariantRiskMinimization(IRMBase):
         w = np.ones([phi.shape[1], 1])
         return sigmoid(data @ (phi @ w).ravel()).squeeze()
 
+
 class InvariantRiskMinimization(IRMBase):
     """Object Wrapper around IRM"""
 
@@ -230,8 +273,52 @@ class InvariantRiskMinimization(IRMBase):
         super().__init__(ptype)
 
 
-    def train(self, envs, seed, args):
-        dim_x = envs[0]['x'].shape[1]
+    def train(self, envs, seed, args, batching=False):
+        ''':param envs: if batching=False two possibilities list of training env
+                        dstructs {'x':data (npArray), 'y':labels (npArray)}.
+                        If true list of dataloaders of each envs'''
+        def update_params(envs, model, optimizer, args):
+            ''':param envs: list of training env data structures, of form
+                             {'x':data (npArray), 'y':labels (npArray)}'''
+            e_comp = {}
+            for i, e in enumerate(envs):
+                e_comp[i] = {}
+                data, y_all = e['x'], e['y']
+                logits = (make_tensor(data) @ phi @ w).squeeze() #Note - for given loss this is raw output
+                labels = make_tensor(y_all).squeeze()
+                e_comp[i]['nll'] = self.mean_nll(logits, labels)
+                e_comp[i]['acc'] = self.mean_accuracy(logits, labels)
+                e_comp[i]['penalty'] = self.penalty(logits, labels)
+
+            train_nll = torch.stack([e_comp[e]['nll'] \
+                                     for e in e_comp]).mean()
+            train_acc = torch.stack([e_comp[e]['acc']
+                                     for e in e_comp]).mean()
+            train_penalty = torch.stack([e_comp[e]['penalty']
+                                         for e in e_comp]).mean()
+            loss = train_nll.clone()
+
+            #Regularize the weights
+            weight_norm = phi.norm().pow(2)
+            loss += args['l2_reg'] * weight_norm
+
+            #Add the invariance penalty
+            penalty_weight = (args['pen_wgt']
+                              if step >= args['penalty_anneal_iters'] else 1.0)
+            loss += penalty_weight * train_penalty
+            if penalty_weight > 1.0: # Rescale big loss
+                loss /= penalty_weight
+
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+            return loss, train_nll, train_acc, train_penalty
+
+        ###############
+        if batching:
+            dim_x = dim(envs[0])
+        else:
+            dim_x = envs[0]['x'].shape[1]
 
         errors = []
         penalties = []
