@@ -24,24 +24,24 @@ def get_expdir(fname):
 
     return expdir
 
-def get_datapath():
+def get_datapath(homedir=''):
     hostname = socket.gethostname()
     if hostname == "Roberts-MacBook-Pro.local":
-        return "data/all_data.csv"
+        return join(homedir, "data/all_data.csv")
     else:
         return "~/civil_comments/data/all_data.csv"
 
-def get_wordfreqpath():
+def get_wordfreqpath(homedir=''):
     hostname = socket.gethostname()
     if hostname == "Roberts-MacBook-Pro.local":
-        return "data/wordfreq.pkl"
+        return join(homedir, "data/wordfreq.pkl")
     else:
         return "~/civil_comments/data/wordfreq.pkl"
 
 def get_wordvecspath():
-    hostname = socket.gethostname()
+    hostname = socket.gethostname(homedir='')
     if hostname == "Roberts-MacBook-Pro.local":
-        return "data/crawl-300d-2M.vec"
+        return join(homedir, )"data/crawl-300d-2M.vec")
     else:
         return "~/civil_comments/data/crawl-300d-2M.vec"
 
