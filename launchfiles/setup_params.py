@@ -38,10 +38,10 @@ def get_wordfreqpath(homedir=''):
     else:
         return "~/civil_comments/data/wordfreq.pkl"
 
-def get_wordvecspath():
-    hostname = socket.gethostname(homedir='')
+def get_wordvecspath(homedir=''):
+    hostname = socket.gethostname()
     if hostname == "Roberts-MacBook-Pro.local":
-        return join(homedir, )"data/crawl-300d-2M.vec")
+        return join(homedir, "data/crawl-300d-2M.vec")
     else:
         return "~/civil_comments/data/crawl-300d-2M.vec"
 
