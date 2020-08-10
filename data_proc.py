@@ -61,12 +61,12 @@ class ToxicityDataset(Dataset):
         """
         self.dataset = data
         self.transform = transform
+        self.dim = 300
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
-        # print(idx)
         sample = self.dataset.loc[idx, 'comment_text']
         if self.transform:
             sample = self.transform(sample).astype(np.float64)
@@ -172,7 +172,7 @@ def load_word_vectors(fname):
     def get_nvecs():
         hostname = socket.gethostname()
         if hostname == "Roberts-MacBook-Pro.local":
-            return 100
+            return 10000
         else:
             return None
     model = KeyedVectors.load_word2vec_format(fname, limit=get_nvecs(), binary=False)

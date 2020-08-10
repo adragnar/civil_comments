@@ -5,6 +5,7 @@ import os
 import warnings
 
 from abc import ABC, abstractmethod
+import math
 from tqdm import tqdm
 
 import pandas as pd
@@ -65,16 +66,25 @@ class MLP(BaseMLP):
             loss = nn.functional.binary_cross_entropy_with_logits(logits, \
                                                                   labels)
             weight_norm = model.weight_norm()
-            loss += args['l2_reg'] * weight_norm
+            loss += l2_reg * weight_norm
 
             #Do the backprop
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
+
+            # def sigmoid(x):
+            #     return 1/(1 + np.exp(-x))
+            # def thresh(x):
+            #     if (x >= 0.5): return 1
+            #     else: return 0
+            # acc = np.abs(np.array([thresh(e) for e in sigmoid(logits.detach().numpy())]) - labels.detach().numpy()).mean()
+            # print(acc)
+
             return loss
 
         if batching:
-            dim_x = dim(data)
+            dim_x = data.dataset.dim
         else:
             dim_x = data['x'].shape[1]
 
@@ -84,13 +94,13 @@ class MLP(BaseMLP):
 
         for step in tqdm(range(args['n_iterations'])):
             if batching:
-                for idx, mbatch in data:
-                    loss = update_params(mbatch['x'], mbatch['y'], model, \
+                for idx, mbatch in enumerate(data):
+                    loss = update_params(mbatch['x'].detach().numpy(), \
+                                         mbatch['y'].detach().numpy(), model, \
                                          optimizer, l2_reg=args['l2_reg'])
             else:
                 loss = update_params(data['x'], data['y'], model, \
                                      optimizer, l2_reg=args['l2_reg'])
-                print(loss)
 
             #Printing and Logging
             if step % 1000 == 0:
@@ -186,11 +196,11 @@ class LinearInvariantRiskMinimization(IRMBase):
 
             #Regularize the weights
             weight_norm = phi.norm().pow(2)
-            loss += args['l2_reg'] * weight_norm
+            loss += l2_reg * weight_norm
 
             #Add the invariance penalty
-            penalty_weight = (args['pen_wgt']
-                              if step >= args['penalty_anneal_iters'] else 1.0)
+            penalty_weight = (pen_wgt
+                              if step >= pen_ann else 1.0)
             loss += penalty_weight * train_penalty
             if penalty_weight > 1.0: # Rescale big loss
                 loss /= penalty_weight
@@ -202,7 +212,7 @@ class LinearInvariantRiskMinimization(IRMBase):
 
         #######
         if batching:
-            dim_x = dim(envs[0])
+            dim_x = envs[0].dataset.dim
         else:
             dim_x = envs[0]['x'].shape[1]
 

@@ -14,11 +14,11 @@ def hyp_labelgen_setup():
     data_fname = setup.get_datapath()
     #Params
     seeds = [10000, 8079]
-    epochs = [450, 900]
-    batch_size = [60000, 10000]
-    hid_layers = [200, 500, 800]
+    epochs = [150, 300]
+    batch_size = [5000, 500]
+    hid_layers = [200, 500]
     lr = [0.01, 0.001, 0.0001]
-    l2 = [1.0, 10.0, 20.0]
+    l2 = [0.1, 1.0, 5.0]
 
     cmdfile = join(expdir, 'cmdfile.sh')
     with open(cmdfile, 'w') as cmdf:

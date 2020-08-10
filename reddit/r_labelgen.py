@@ -10,6 +10,7 @@ sys.path.append(os.getcwd())
 import copy
 import pickle
 import socket
+import logging
 
 import pandas as pd
 import numpy as np
@@ -23,31 +24,14 @@ from tqdm import tqdm
 
 import algo_hyperparams
 import data_proc
-import main
 import models
 import setup_params as setup
 import ref
 from ref import make_tensor
 
-
-def reddit_labelgen(id, expdir, data_fname, args):
-    #Generate word embedding transform
-    t = data_proc.get_word_transform('embed', setup.get_wordvecspath())
-
-    #Generate full_data
-    # g_data = pd.read_csv(setup.get_reddit_datapath('gendered'))
-    # toxic_data = g_data[g_data['subreddit'] == 'TheRedPill'][['body']].sample(n=nsamples, random_state=args['seed'])
-    # toxic_data['toxicity'] = np.ones(len(toxic_data))
-    #
-    # baseline_data = pd.read_csv(setup.get_reddit_datapath('baseline'))[['body']].sample(n=nsamples, random_state=args['seed'])
-    # baseline_data['toxicity'] = np.zeros(len(baseline_data))
-    #
-    # full_data = pd.concat([baseline_data, toxic_data], ignore_index=True).sample(frac=1, random_state=args['seed'])
-    # full_data['comment_text'] = full_data['body']
-    # full_data.drop('body', axis=1, inplace=True)
-
+def generate_data(t, seed, homedir=''):
     thresh = 0.4
-    full_data = pd.read_csv(setup.get_datapath())
+    full_data = pd.read_csv(setup.get_datapath(homedir))
     full_data['comment_len'] = full_data['comment_text'].apply(lambda x: 1 if (len(str(x)) > 15) else 0)
     full_data = full_data[full_data['comment_len'] == 1]
     full_data['gender'] = full_data[['male', 'female', 'transgender', \
@@ -60,53 +44,70 @@ def reddit_labelgen(id, expdir, data_fname, args):
     toxic_data = full_data[full_data['toxicity'] == 0]
     nontoxic_data = full_data[full_data['toxicity'] == 1]
     nsamples = min(len(toxic_data), len(nontoxic_data))
-    toxic_data = toxic_data.sample(n=nsamples, random_state=args['seed'])
-    nontoxic_data = nontoxic_data.sample(n=nsamples, random_state=args['seed'])
+    toxic_data = toxic_data.sample(n=nsamples, random_state=seed)
+    nontoxic_data = nontoxic_data.sample(n=nsamples, random_state=seed)
     full_data = pd.concat([toxic_data, nontoxic_data], ignore_index=True).sample(frac=1)
 
 
 
     #Now the Data Processing
-    train_data, val_data = train_test_split(full_data, test_size=0.2, random_state=args['seed'])
-    val_data, test_data = train_test_split(val_data, test_size=0.25, random_state=args['seed'])
+    train_data, val_data = train_test_split(full_data, test_size=0.2, random_state=seed)
+    val_data, test_data = train_test_split(val_data, test_size=0.25, random_state=seed)
     train_data.reset_index(drop=True, inplace=True)
     val_data.reset_index(drop=True, inplace=True)
     train_data = data_proc.ToxicityDataset(train_data, transform=t)  #NOTE FOR AMPLER TO WORK, INDEX MUST BE SEQUENTIAL 0-LEN(DSET)
     val_data = data_proc.ToxicityDataset(val_data, transform=t)
+    test_data = data_proc.ToxicityDataset(test_data, transform=t)
+    return train_data, val_data, test_data
+
+def reddit_labelgen(id, expdir, data_fname, args):
+    #Logging Setup
+    logger_fname = os.path.join(expdir, 'log_{}.txt'.format(str(id)))
+    logging.basicConfig(filename=logger_fname, level=logging.DEBUG)
+
+    #Generate word embedding transform
+    t = data_proc.get_word_transform('embed', setup.get_wordvecspath())
+    logging.info('WEs loaded')
+    train_data, val_data, __ = generate_data(t, args['seed'])
     dataloader = DataLoader(train_data, batch_size=args['batch_size'], shuffle=True)
+    logging.info('data loaded')
 
     #Train model to distinguish.
-    losses = []
-    model = models.BaseMLP(300, args['hid_layers'])
-    optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'])
-
-    for epoch in tqdm(range(args['epochs'])):
-        for i_batch, sample_batch in tqdm(enumerate(dataloader)):
-            logits = model(sample_batch['x'].float()).squeeze()
-            labels = sample_batch['y'].double()
-            loss = nn.functional.binary_cross_entropy_with_logits(logits, labels)
-
-            weight_norm = model.weight_norm()
-            loss += args['l2_reg'] * weight_norm
-
-            #Do the backprop
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-
-            #Accounting
-            losses.append(loss.detach().numpy())
+    base = models.MLP()
+    model, losses = base.run(dataloader, args, batching=True)
+    # losses = []
+    # model = models.BaseMLP(300, args['hid_layers'])
+    # optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'])
+    #
+    # for epoch in tqdm(range(args['epochs'])):
+    #     for i_batch, sample_batch in tqdm(enumerate(dataloader)):
+    #         logits = model(sample_batch['x'].float()).squeeze()
+    #         labels = sample_batch['y'].double()
+    #         loss = nn.functional.binary_cross_entropy_with_logits(logits, labels)
+    #
+    #         weight_norm = model.weight_norm()
+    #         loss += args['l2_reg'] * weight_norm
+    #
+    #         #Do the backprop
+    #         loss.backward()
+    #         optimizer.step()
+    #         optimizer.zero_grad()
+    #
+    #         #Accounting
+    #         losses.append(loss.detach().numpy())
+    #         logging.info('loss - {}'.format(losses[-1]))
+    #         print(loss)
 
     ##Now validate
     final_results = {}
-    final_results['model'] = model.state_dict()
+    final_results['model'] = model
     final_data = {'train':train_data[:], 'val':val_data[:]}
     for p, d in final_data.items():
-        logits = model(make_tensor(d['x'])).detach().numpy()
-        labels = np.expand_dims(d['y'], axis=1)
-        final_results[p+'_loss'] = ref.compute_loss(logits, labels, ltype='BCE')
-        final_results[p+'_acc'] = ref.compute_loss(logits, labels, ltype='ACC')
-    final_results['final_dec'] = losses[int(len(losses) * 0.9):]
+        preds = base.predict(d['x'], model, args={'hid_layers':args['hid_layers']}).values
+        labels = d['y']
+        final_results[p+'_loss'] = ref.compute_loss(preds, labels, ltype='BCE')
+        final_results[p+'_acc'] = ref.compute_loss(preds, labels, ltype='ACC')
+    final_results['final_dec'] = losses[int(len(losses) * 0.5):]
     final_results['id'] = id
     final_results['params'] = args
 
@@ -136,7 +137,7 @@ if __name__ == '__main__':
         assert False
     else:
         algo_params = {'seed':args.seed, \
-                      'epochs':args.epochs, \
+                      'n_iterations':args.epochs, \
                       'batch_size':args.batch_size, \
                       'hid_layers':args.hid_layers, \
                       'lr': args.lr, \
