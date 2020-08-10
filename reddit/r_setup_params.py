@@ -9,6 +9,19 @@ sys.path.append(join(os.getcwd(), 'launchfiles'))
 
 import setup_params as setup
 
+# def get_reddit_datapath(v):
+#     hostname = socket.gethostname()
+#     if hostname == "Roberts-MacBook-Pro.local":
+#         if v == 'gendered':
+#             return "data/reddit/final/2014_gendered.csv"
+#         elif v == 'baseline':
+#             return "data/reddit/final/2014b.csv"
+#         else:
+#             assert False
+#     else:
+#         # return "~/civil_comments/data/all_data.csv"
+#         raise Exception('Put this datapath in')
+
 def hyp_labelgen_setup():
     expdir = setup.get_expdir('reddit_label_gen')
     data_fname = setup.get_datapath()

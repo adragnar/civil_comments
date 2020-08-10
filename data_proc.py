@@ -52,14 +52,15 @@ STOPWORDS = set(stopwords.words('english'))
 class ToxicityDataset(Dataset):
     """Face Landmarks dataset."""
 
-    def __init__(self, data, transform=None):
+    def __init__(self, data, rel_cols={'data':'comment_text', 'labels':'toxicity'}, transform=None):
         """
         Args:
             data (pd dataframe): The pd dataframe with (uid, tox_label, text)
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.dataset = data
+        self.dataset = data[list(rel_cols.keys())]
+        self.cols = rel_cols
         self.transform = transform
         self.dim = 300
 
@@ -67,10 +68,10 @@ class ToxicityDataset(Dataset):
         return len(self.dataset)
 
     def __getitem__(self, idx):
-        sample = self.dataset.loc[idx, 'comment_text']
+        sample = self.dataset.loc[idx, self.cols['data']]
         if self.transform:
             sample = self.transform(sample).astype(np.float64)
-        target = self.dataset.loc[idx, 'toxicity'].astype(np.float64)
+        target = self.dataset.loc[idx, self.cols['labels']].astype(np.float64)
         if 'numpy' not in str(type(target)):
             target = target.values
         #
@@ -172,7 +173,7 @@ def load_word_vectors(fname):
     def get_nvecs():
         hostname = socket.gethostname()
         if hostname == "Roberts-MacBook-Pro.local":
-            return 10000
+            return 1000
         else:
             return None
     model = KeyedVectors.load_word2vec_format(fname, limit=get_nvecs(), binary=False)
