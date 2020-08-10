@@ -34,13 +34,19 @@ def generate_data(t, seed, homedir=''):
     full_data = pd.read_csv(setup.get_datapath(homedir))
     full_data['comment_len'] = full_data['comment_text'].apply(lambda x: 1 if (len(str(x)) > 15) else 0)
     full_data = full_data[full_data['comment_len'] == 1]
+    full_data['toxicity'] = full_data['toxicity'].apply((lambda x: 1 if x > thresh else 0))
+
+    #Remove Out-ofDomain test set
     full_data['gender'] = full_data[['male', 'female', 'transgender', \
                                      'other_gender', 'heterosexual', \
                                      'homosexual_gay_or_lesbian', 'bisexual', \
                                      'other_sexual_orientation', ]].max(axis=1)
-    full_data.drop('gender', axis=1, inplace=True)
-    full_data['toxicity'] = full_data['toxicity'].apply((lambda x: 1 if x > thresh else 0))
+    test_index = (full_data['gender'] > 0)
+    test_data = full_data[test_index]
+    test_data = data_proc.ToxicityDataset(test_data, transform=t)
+    full_data = full_data[np.logical_not(test_index)]
 
+    #Constuct Balanced training/validation dataset
     toxic_data = full_data[full_data['toxicity'] == 0]
     nontoxic_data = full_data[full_data['toxicity'] == 1]
     nsamples = min(len(toxic_data), len(nontoxic_data))
@@ -49,15 +55,12 @@ def generate_data(t, seed, homedir=''):
     full_data = pd.concat([toxic_data, nontoxic_data], ignore_index=True).sample(frac=1)
 
 
-
-    #Now the Data Processing
+    #Process training and validation data
     train_data, val_data = train_test_split(full_data, test_size=0.2, random_state=seed)
-    val_data, test_data = train_test_split(val_data, test_size=0.25, random_state=seed)
     train_data.reset_index(drop=True, inplace=True)
     val_data.reset_index(drop=True, inplace=True)
     train_data = data_proc.ToxicityDataset(train_data, transform=t)  #NOTE FOR AMPLER TO WORK, INDEX MUST BE SEQUENTIAL 0-LEN(DSET)
     val_data = data_proc.ToxicityDataset(val_data, transform=t)
-    test_data = data_proc.ToxicityDataset(test_data, transform=t)
     return train_data, val_data, test_data
 
 def reddit_labelgen(id, expdir, data_fname, args):
