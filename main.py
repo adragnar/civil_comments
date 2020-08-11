@@ -35,23 +35,15 @@ import ref
 import setup_params as setup
 import partition_environments
 
-def evaluate_ensemble(data, base, model=None, hid_layers=None, ltype='ACC'):
+def evaluate_ensemble(data, model_list, ltype='ACC'):
     '''Given an ensemble of models and its data, evaluate
     :param trainenvs: list of dictionaries of np arrays, each which is
     the dataset for a train env {'x':arr, 'y':arr}
-    :param testenv: dict of np arrays dataset for a test env  {'x':arr, 'y':arr}
-    :param base: list of trained models used for prediction
-    :param model: the model_params needed for .predict method (neeed for all but sklearn)'''
+    :param model_list: list of all 'base objects' with self.model'''
 
     preds = []
-    if type(base) == list:  ##In case we're using sklearn bb classifiers
-        assert 'sklearn' in str(type(base[0]))
-        for b in base:
-            preds.append(b.predict(data['x']))
-
-    else:  #Assuming these will be my standard interface fucntions
-        for m in models:
-            preds.append(base.predict(data['x'], m, args={'hid_layers':hid_layers}))
+    for m in model_list:
+        preds.append(m.predict(data['x']))
 
     avg_pred = np.mean(preds, axis=0)
     labels = data['y']
@@ -60,15 +52,12 @@ def evaluate_ensemble(data, base, model=None, hid_layers=None, ltype='ACC'):
     return acc
 
 
-def evaluate_model(data, base, model=None, hid_layers=None, ltype='ACC'):
+def evaluate_model(data, model, ltype='ACC'):
     '''Given a model and its data, evaluate
     :param data: dict of np arrays dataset for a test env  {'x':arr, 'y':arr}
-    :param model: trained mdoel used for prediction
+    :param model: the 'base' object with model object stored inside
     :param base: the model needed for prediction method'''
-    if 'sklearn' in str(type(base)):
-        preds = base.predict(data['x'])
-    else:
-        preds = base.predict(data['x'], model, args={'hid_layers':hid_layers})
+    preds = model.predict(data['x'])
     labels = data['y']
     acc = ref.compute_loss(preds, labels, ltype=ltype)
     return acc
@@ -77,6 +66,7 @@ def main(id, expdir, data_fname, args, algo_args):
     ''':param env_splits: the envrionments, infinite possible, each binary of
                           form np.array([[.1, 0.9], [0.2, 0.8], [0.9, 0.1]])'''
 
+    raise Exception('SUrprise! THis code had some itnterface changes that may be untested')
     logger_fname = os.path.join(expdir, 'log_{}.txt'.format(id))
     logging.basicConfig(filename=logger_fname, level=logging.DEBUG)
 
@@ -108,18 +98,19 @@ def main(id, expdir, data_fname, args, algo_args):
         baseline_model = LogisticRegression(fit_intercept=True, penalty='l2', C=float(1/algo_args['l2_reg'])).fit(train_partition['x'], train_partition['y'])
         baseline_train_score = baseline_model.score(train_partition['x'], train_partition['y'])
         baseline_test_score = baseline_model.score(test_partition['x'], test_partition['y'])
+        to_save_model = baseline_model
+
     elif args['base_model'] == 'mlp':
         base = models.MLP()
-        baseline_model, _ = base.run(train_partition, algo_args)
-        baseline_train_score = evaluate_model(train_partition, base, model=baseline_model, \
-                                   hid_layers=algo_args['hid_layers'], ltype='ACC')
-        baseline_test_score = evaluate_model(test_partition, base, model=baseline_model, \
-                                   hid_layers=algo_args['hid_layers'], ltype='ACC')
+        losses = base.run(train_partition, algo_args)
+        baseline_train_score = evaluate_model(train_partition, base, ltype='ACC')
+        baseline_test_score = evaluate_model(test_partition, base, ltype='ACC')
         print(baseline_train_score, baseline_test_score)
+        to_save_model = {'model_base':models.MLP(), 'model_arch':base.model_arch, 'model_params':base.model}
 
     baseline_res = {'id':{'params':args, 'algo_params':algo_args}, \
                     'results':{'train':baseline_train_score, 'test':baseline_test_score}, \
-                    'model':baseline_model}
+                    'model':to_save_model}
     pickle.dump(baseline_res, open(join(expdir, '{}_baseline.pkl'.format(id)), 'wb'))
 
     #Ensemble Logistic Regression
@@ -127,47 +118,56 @@ def main(id, expdir, data_fname, args, algo_args):
     if args['base_model'] == 'logreg':
         for e in train_envs:
             ensemble_models.append(LogisticRegression(fit_intercept=True, penalty='l2', C=float(1/algo_args['l2_reg'])).fit(e['x'], e['y']))
-        ensemble_train_score = evaluate_ensemble(train_partition, ensemble_models, \
-                                   hid_layers=algo_args['hid_layers'], ltype='ACC')
-        ensemble_test_score = evaluate_ensemble(test_partition, ensemble_models, \
-                                   hid_layers=algo_args['hid_layers'], ltype='ACC')
+        ensemble_train_score = evaluate_ensemble(train_partition, ensemble_models,  ltype='ACC')
+        ensemble_test_score = evaluate_ensemble(test_partition, ensemble_models, ltype='ACC')
+        to_save_model = ensemble_models
 
     elif args['base_model'] == 'mlp':
+        to_save_model = []
         for e in train_envs:
+            savem = {}
             base = models.MLP()
-            bm = base.run(e, algo_args)
-            ensemble_models.append(bm)
-        ensemble_train_score = evaluate_ensemble(train_partition, base, model=ensemble_models, \
-                               hid_layers=algo_args['hid_layers'], ltype='ACC')
-        ensemble_test_score = evaluate_ensemble(test_partition, base, model=ensemble_models, \
-                         hid_layers=algo_args['hid_layers'], ltype='ACC')
+            base.run(e, algo_args)
+            ensemble_models.append(base)
+            savem['model_base'] = models.MLP()
+            savem['model_arch'] = base.model_arch
+            savem['model_params'] = base.model.state_dict()
+            to_save_model.append(savem)
+
+        ensemble_train_score = evaluate_ensemble(train_partition, ensemble_models, ltype='ACC')
+        ensemble_test_score = evaluate_ensemble(test_partition, ensemble_models, ltype='ACC')
 
     ensemble_res = {'id':{'params':args, 'algo_params':algo_args}, \
                     'results':{'train':ensemble_train_score, 'test':ensemble_test_score}, \
-                    'model':ensemble_models}
+                    'model':to_save_model}
     pickle.dump(ensemble_res, open(join(expdir, '{}_ensemble.pkl'.format(id)), 'wb'))
 
 
     #IRM Logistic Regression
+    to_save_model = {}
     if args['base_model'] == 'logreg':
         base = models.LinearInvariantRiskMinimization('cls')
-        irm_model, errors, penalties, losses = base.train(train_envs, args['seed'], algo_args)
-        irm_train_acc =  evaluate_model({'x': np.concatenate([train_envs[i]['x'] for i in range(len(train_envs))]), \
-                             'y':np.concatenate([train_envs[i]['y'] for i in range(len(train_envs))])}, \
-                             base, model=irm_model, ltype='ACC')
-        irm_test_acc = evaluate_model(test_partition, base, model=irm_model, ltype='ACC')
-
+        to_save_model['model_base'] = models.LinearInvariantRiskMinimization('cls')
     elif args['base_model'] == 'mlp':
         base = models.InvariantRiskMinimization('cls')
-        irm_model, errors, penalties, losses = base.train(train_envs, args['seed'], algo_args)
-        irm_train_acc =  evaluate_model({'x': np.concatenate([train_envs[i]['x'] for i in range(len(train_envs))]), \
-                             'y':np.concatenate([train_envs[i]['y'] for i in range(len(train_envs))])}, \
-                             base, model=irm_model, hid_layers=args['hid_layers'], ltype='ACC')
-        irm_test_acc = evaluate_model(test_partition, base, model=irm_model, hid_layers=args['hid_layers'], ltype='ACC')
+        to_save_model['model_base'] = models.InvariantRiskMinimization('cls')
+
+    errors, penalties, losses = base.train(train_envs, args['seed'], algo_args)
+    irm_train_acc =  evaluate_model({'x': np.concatenate([train_envs[i]['x'] for i in range(len(train_envs))]), \
+                         'y':np.concatenate([train_envs[i]['y'] for i in range(len(train_envs))])}, \
+                         base, ltype='ACC')
+    irm_test_acc = evaluate_model(test_partition, base, ltype='ACC')
+
+    if args['base_model'] == 'logreg':
+        base = models.LinearInvariantRiskMinimization('cls')
+        to_save_model['model'] = base.model
+    elif args['base_model'] == 'mlp':
+        to_save_model['model_arch'] = base.model_arch
+        to_save_model['model_params'] = base.model.state_dict()
 
     irm_res = {'id':{'params':args, 'algo_params':algo_args}, \
                     'results':{'train':irm_train_acc, 'test':irm_test_acc}, \
-                    'model':irm_model}
+                    'model':to_save_model}
 
     pickle.dump(irm_res, open(join(expdir, '{}_irm.pkl'.format(id)), 'wb'))
 

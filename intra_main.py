@@ -106,13 +106,19 @@ def intra_main(id, expdir, fname, args, algo_args):
 
     #IRM Logistic Regression
     base = models.LinearInvariantRiskMinimization('cls')
-    irm_model, errors, penalties, losses = base.train(train_partitions, args['seed'], algo_args)
+
+
+    errors, penalties, losses = base.train(train_partitions, args['seed'], algo_args)
     irm_train_acc =  main.evaluate_model({'x': np.concatenate([train_partitions[i]['x'] for i in range(len(train_partitions))]), \
                                      'y':np.concatenate([train_partitions[i]['y'] for i in range(len(train_partitions))])}, \
-                                     base, model=irm_model, ltype='ACC')
+                                     base, ltype='ACC')
+    import pdb; pdb.set_trace()
+    to_save_model = {}
+    to_save_model['model_base'] = models.LinearInvariantRiskMinimization('cls')
+    to_save_model['model'] = base.model
     irm_res = {'id':{'params':args, 'algo_params':algo_args}, \
                     'results':{'train':irm_train_acc}, \
-                    'model':irm_model}
+                    'model':to_save_model}
     pickle.dump(irm_res, open(join(expdir, '{}_irm.pkl'.format(id)), 'wb'))
 
     #Test Models
@@ -121,8 +127,7 @@ def intra_main(id, expdir, fname, args, algo_args):
         for d, vals in dems.items():
             #Run inference on test partitions
             baseline_test_score = baseline_model.score(vals['x'], vals['y'])
-            irm_test_acc = main.evaluate_model(vals, \
-                                             base, model=irm_model, ltype='ACC')
+            irm_test_acc = main.evaluate_model(vals, base, ltype='ACC')
             results.append([cat, d, baseline_test_score, irm_test_acc])
 
     results = pd.DataFrame(results)

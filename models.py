@@ -54,7 +54,9 @@ class MLP(BaseMLP):
        :param data: if batching=False, dstructs {'x':data (npArray), 'y':labels (npArray)}.
                     if true pytorch dataloader with {'x':np, 'y':np} as batches'''
     def __init__(self):
-        pass
+        self.model_arch = None  #Included for purposes of saving archetecture
+        self.model = None
+
 
     def run(self, data, args, batching=False):
         ''':param data: if batching=False, dstructs {'x':data (npArray), 'y':labels (npArray)}.
@@ -89,52 +91,47 @@ class MLP(BaseMLP):
             dim_x = data['x'].shape[1]
 
         losses = []
-        model = BaseMLP(dim_x, args['hid_layers'])
-        optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'])
+        self.model_arch = BaseMLP(dim_x, args['hid_layers'])
+        self.model = BaseMLP(dim_x, args['hid_layers'])
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=args['lr'])
 
         for step in tqdm(range(args['n_iterations'])):
             if batching:
                 for idx, mbatch in enumerate(data):
                     loss = update_params(mbatch['x'].detach().numpy(), \
-                                         mbatch['y'].detach().numpy(), model, \
+                                         mbatch['y'].detach().numpy(), self.model, \
                                          optimizer, l2_reg=args['l2_reg'])
             else:
-                loss = update_params(data['x'], data['y'], model, \
+                loss = update_params(data['x'], data['y'], self.model, \
                                      optimizer, l2_reg=args['l2_reg'])
 
             #Printing and Logging
             if step % 1000 == 0:
                 logging.info([np.int32(step), loss.detach().cpu().numpy()])
             losses.append(loss.detach().numpy())
+        return losses
 
-        return model.state_dict(), losses
-
-    def get_weight_norm(self, model_params, dsize=None, hid_layers=100):
-        #Order dataframe by coefficients column
-        model = BaseMLP(dsize, hid_layers)
-        model.load_state_dict(model_params)
-        return model.weight_norm()
-
-    def predict(self, data, model_params, args={}):
+    def predict(self, data):
         '''
         :param data: the dataset (nparray)
-        :param phi_params: The state dict of the MLP
-        :param args - dict with one key, hid_layers'''
+        :param self.model - full model object (ie- callable for inference)
+        '''
+        assert self.model is not None
+
         #Handle case of no data
         if data.shape[0] == 0:
-            return pd.DataFrame()
+            return np.array()
 
-        model = BaseMLP(data.shape[1], args['hid_layers'])
-        model.load_state_dict(model_params)
-        logits = model(make_tensor(data))
+        logits = self.model(make_tensor(data))
         preds = nn.functional.sigmoid(logits).detach().numpy()
-        return pd.DataFrame(preds)
+        return preds
 
 class IRMBase(ABC):
     '''Base class for all IRM implementations'''
     def __init__(self, ptype):
         '''Ptype: p for regression problem, cls for binary classification'''
         self.ptype = ptype
+
 
     @abstractmethod
     def train(self, data, y_all, environments, seed, args):
@@ -167,6 +164,7 @@ class LinearInvariantRiskMinimization(IRMBase):
 
     def __init__(self, ptype):
         super().__init__(ptype)
+        self.model = None
 
     def train(self, envs, seed, args, batching=False):
         ''':param envs: if batching=False two possibilities list of training env
@@ -267,20 +265,22 @@ class LinearInvariantRiskMinimization(IRMBase):
             penalties.append(train_penalty.detach().numpy())
             losses.append(loss.detach().numpy())
 
-        return phi, errors, penalties, losses
+        self.model = phi
+        return errors, penalties, losses
 
-    def predict(self, data, phi_params, args={}):
+    def predict(self, data):
         '''
         :param data: the dataset (nparray)
         :param phi_params: The state dict of the MLP'''
         def sigmoid(x):
             return 1/(1 + np.exp(-x))
 
+        assert self.model is not None
         #Handle case of no data
         if data.shape[0] == 0:
             assert False
 
-        phi = phi_params.detach().numpy()
+        phi = self.model.detach().numpy()
         w = np.ones([phi.shape[1], 1])
         return sigmoid(data @ (phi @ w).ravel()).squeeze()
 

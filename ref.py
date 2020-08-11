@@ -47,7 +47,7 @@ def make_tensor(arr):
     '''Convert np array into a float tensor, or pass throiugh a regular tensor'''
     if type(arr) == torch.Tensor:
         return arr.float()
-    elif type(arr) == numpy.ndarray:
+    elif type(arr) == np.ndarray:
         return torch.from_numpy(arr).float()
     else:
         raise Exception('Unimplemented')
