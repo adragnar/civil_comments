@@ -188,3 +188,26 @@ def sent_proc(txt, stopwords=[], lem=None):
     if lem is not None:
         words = {lem.lemmatize(w) for w in words}
     return words
+
+def load_saved_model(mpath):
+    '''Given path to a model data structure manually saved, reconstruct the
+    appropiate model objext (ie - such that .predict() can be called)'''
+    model_info = pickle.load(open(mpath, 'rb'))
+    import pdb; pdb.set_trace()
+    if type(model_info['model']) != dict:  #If model can be stored straight
+        return model_info['model']
+
+    #reconsturcted MLP
+    elif set(['base_model', 'model_arch', 'model_params']) ==  set(model_info['model'].keys()):
+        base = model_info['model']['base_model']
+        base.model = model_info['model']['model_arch']
+        base.model.load_state_dict(model_info['model']['model_params'])
+
+    #Reconsturcted Linear IRM
+    elif set(['base_model', 'model']) ==  set(model_info['model'].keys()):
+        base = model_info['model']['base_model']
+        base.model = model_info['model']['model']
+    else:
+        raise Exception ('Bad format')
+
+    return base

@@ -52,16 +52,13 @@ def add_toxlabel(old_fpaths, new_fpaths, mpath, e_path):
     print('WE loaded')
     for fname, new_fname in zip(old_fpaths, new_fpaths):
         data = pd.read_csv(fname)
-        import pdb; pdb.set_trace()
         data = preprocess_data(data)
 
         data_embed = t(data['body'])
         print('data')
-        model = pickle.load(open(mpath, 'rb'))
-        base = models.MLP()
+        model = data_proc.load_saved_model(mpath)
         print('model')
-        data['toxicity'] = base.predict(data_embed, model['model'], \
-                                   args={'hid_layers':model['params']['hid_layers']}).values
+        data['toxicity'] = model.predict(data_embed)
         data.to_csv(new_fname)
 
 
@@ -69,11 +66,11 @@ if __name__ == '__main__':
     assert (os.getcwd().split('/')[-1] == 'civil_comments') or \
                     (os.getcwd().split('/')[-1] == 'civil_liberties')
 
-    old_fpaths = ['reddit/data/orig/2014b.csv']
-    new_fpaths = ['reddit/data/labeled/2014b_labeled.csv']
-    # old_fpaths = ['reddit/data/orig/test.csv']
-    # new_fpaths = ['reddit/data/labeled/test_labeled.csv']
-    m_path = 'reddit/labelgen_models/0810_labelgen.pkl'
+    # old_fpaths = ['reddit/data/orig/2014b.csv']
+    # new_fpaths = ['reddit/data/labeled/2014b_labeled.csv']
+    old_fpaths = ['reddit/data/orig/test.csv']
+    new_fpaths = ['reddit/data/labeled/test_labeled.csv']
+    m_path = 'reddit/labelgen_models/0_redlgen.pkl'
     add_toxlabel(old_fpaths, \
                  new_fpaths, \
                  m_path, \

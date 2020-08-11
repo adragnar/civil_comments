@@ -30,7 +30,7 @@ import ref
 from ref import make_tensor
 
 def generate_data(t, seed, homedir=''):
-    full_data = pd.read_csv(setup.get_datapath(homedir)); full_data = full_data.sample(n=1000)
+    full_data = pd.read_csv(setup.get_datapath(homedir))
 
     #Dataset Level Preprocessing
     thresh = 0.4
