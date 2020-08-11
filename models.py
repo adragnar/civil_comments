@@ -19,10 +19,6 @@ from sklearn.linear_model import Lasso, LinearRegression, LogisticRegression
 
 from ref import make_tensor
 
-warnings.simplefilter(action='ignore', category=FutureWarning)
-warnings.simplefilter(action='ignore', category=RuntimeWarning)
-
-
 
 class BaseMLP(nn.Module):
     def __init__(self, d, hid_dim):

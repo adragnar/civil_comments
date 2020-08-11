@@ -23,17 +23,18 @@ def hyp_subreddit_oodgen_setup():
     data_fname = join(os.getcwd(), get_reddit_datapath('gendered'))
     #Params
     seeds = [10000, 8079, 501]
-    epochs = [100, 200]
-    n_batches = [400, 1000, 5000]
+    epochs = [150]
+    n_batches = [20000]
     hid_layers = [1]
-    lr = [0.01, 0.001, 0.0001]
-    l2 = [0.1, 1.0, 10]
-    pen_wgt = [1000 5000 10000]
+    lr = [0.001, 0.0001]
+    l2 = [0.1, 1.0]
+    pen_wgt = [1000, 5000, 10000]
     pen_ann = [1]
 
     cmdfile = join(expdir, 'cmdfile.sh')
     with open(cmdfile, 'w') as cmdf:
-        for id, combo in enumerate(itertools.product(seeds, epochs, n_batches, hid_layers, lr, l2)):
+        for id, combo in enumerate(itertools.product(seeds, epochs, n_batches, \
+                                       hid_layers, lr, l2, pen_wgt, pen_ann)):
             command_str = \
             '''python reddit/r_main.py {id} {expdir} {data_fname} {l_noise} -seed {seed} -inc_hyperparams 1 -epochs {epoch} -n_batches {batch} -hid_layers {hid} -lr {lr} -l2 {l2} -pen_wgt {pen_wgt} -pen_ann {pen_ann}\n'''
             command_str = command_str.format(

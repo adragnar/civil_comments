@@ -21,11 +21,15 @@ import torch.nn.functional as F
 
 def pred_binarize(v):
     '''Convert all values to 0 if <0.5, 1 otherwise
-    :param v: npArray with dim=1'''
+    :param v: npArray with dim=1
+    :return npArray with dim=1'''
     def thresh(x):
         if (x >= 0.5): return 1
         else: return 0
-    return np.array([thresh(e) for e in v])
+    if v.shape == ():
+        return thresh(v)
+    else:
+        return np.array([thresh(e) for e in v])
 
 def compute_loss(pred, ground, ltype='MSE'):
     '''Compute loss between two prediction vectors
