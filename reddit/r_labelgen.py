@@ -30,8 +30,10 @@ import ref
 from ref import make_tensor
 
 def generate_data(t, seed, homedir=''):
+    full_data = pd.read_csv(setup.get_datapath(homedir)); full_data = full_data.sample(n=1000)
+
+    #Dataset Level Preprocessing
     thresh = 0.4
-    full_data = pd.read_csv(setup.get_datapath(homedir))
     full_data['comment_len'] = full_data['comment_text'].apply(lambda x: 1 if (len(str(x)) > 15) else 0)
     full_data = full_data[full_data['comment_len'] == 1]
     full_data['toxicity'] = full_data['toxicity'].apply((lambda x: 1 if x > thresh else 0))
@@ -77,36 +79,15 @@ def reddit_labelgen(id, expdir, data_fname, args):
 
     #Train model to distinguish.
     base = models.MLP()
-    model, losses = base.run(dataloader, args, batching=True)
-    # losses = []
-    # model = models.BaseMLP(300, args['hid_layers'])
-    # optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'])
-    #
-    # for epoch in tqdm(range(args['epochs'])):
-    #     for i_batch, sample_batch in tqdm(enumerate(dataloader)):
-    #         logits = model(sample_batch['x'].float()).squeeze()
-    #         labels = sample_batch['y'].double()
-    #         loss = nn.functional.binary_cross_entropy_with_logits(logits, labels)
-    #
-    #         weight_norm = model.weight_norm()
-    #         loss += args['l2_reg'] * weight_norm
-    #
-    #         #Do the backprop
-    #         loss.backward()
-    #         optimizer.step()
-    #         optimizer.zero_grad()
-    #
-    #         #Accounting
-    #         losses.append(loss.detach().numpy())
-    #         logging.info('loss - {}'.format(losses[-1]))
-    #         print(loss)
-
+    losses = base.run(dataloader, args, batching=True)
+    to_save_model = {'base_model':models.MLP(), 'model_arch':base.model_arch, \
+                      'model_params':base.model.state_dict()}
     ##Now validate
     final_results = {}
-    final_results['model'] = model
+    final_results['model'] = to_save_model
     final_data = {'train':train_data[:], 'val':val_data[:]}
     for p, d in final_data.items():
-        preds = base.predict(d['x'], model, args={'hid_layers':args['hid_layers']}).values
+        preds = base.predict(d['x'])
         labels = d['y']
         final_results[p+'_loss'] = ref.compute_loss(preds, labels, ltype='BCE')
         final_results[p+'_acc'] = ref.compute_loss(preds, labels, ltype='ACC')

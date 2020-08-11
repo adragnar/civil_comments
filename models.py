@@ -45,7 +45,7 @@ class BaseMLP(nn.Module):
         return out
 
 
-class MLP(BaseMLP):
+class MLP():
     '''Wrapper around BaseMLP class to use as standalone prediction model
        :param data: if batching=False, dstructs {'x':data (npArray), 'y':labels (npArray)}.
                     if true pytorch dataloader with {'x':np, 'y':np} as batches'''
