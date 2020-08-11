@@ -233,8 +233,6 @@ class LinearInvariantRiskMinimization(IRMBase):
                                         'pen_wgt':args['pen_wgt'], \
                                         'penalty_anneal_iters':args['penalty_anneal_iters']})
 
-                    print(loss)
-
                 # for i in range(nbatch):
                 #     import pdb; pdb.set_trace()
                 #     input_envs = [next(dl) for dl in envs_iters]
@@ -249,7 +247,7 @@ class LinearInvariantRiskMinimization(IRMBase):
                                             'penalty_anneal_iters':args['penalty_anneal_iters']})
 
             #Printing and Logging
-            if step % 1000 == 0:
+            if step % 5 == 0:
                 logging.info([np.int32(step),
                               train_nll.detach().cpu().numpy(),
                               train_acc.detach().cpu().numpy(),

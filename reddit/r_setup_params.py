@@ -23,8 +23,8 @@ def hyp_subreddit_oodgen_setup():
     data_fname = join(os.getcwd(), get_reddit_datapath('gendered'))
     #Params
     seeds = [10000, 8079, 501]
-    epochs = [150]
-    n_batches = [20000]
+    epochs = [50]
+    n_batches = [2000]
     hid_layers = [1]
     lr = [0.001, 0.0001]
     l2 = [0.1, 1.0]

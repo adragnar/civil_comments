@@ -91,7 +91,7 @@ def reddit_labelgen(id, expdir, data_fname, args):
         labels = d['y']
         final_results[p+'_loss'] = ref.compute_loss(preds, labels, ltype='BCE')
         final_results[p+'_acc'] = ref.compute_loss(preds, labels, ltype='ACC')
-    final_results['final_dec'] = losses[int(len(losses) * 0.5):]
+    final_results['losses'] = losses
     final_results['id'] = id
     final_results['params'] = args
 
