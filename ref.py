@@ -44,5 +44,10 @@ def compute_loss(pred, ground, ltype='MSE'):
         return 1 - F.mse_loss(torch.tensor(pred.squeeze()).float(), torch.tensor(ground.squeeze()).float()).numpy()
 
 def make_tensor(arr):
-    '''Convert np array into a float tensor'''
-    return torch.from_numpy(arr).float()
+    '''Convert np array into a float tensor, or pass throiugh a regular tensor'''
+    if type(arr) == torch.Tensor:
+        return arr.float()
+    elif type(arr) == numpy.ndarray:
+        return torch.from_numpy(arr).float()
+    else:
+        raise Exception('Unimplemented')
