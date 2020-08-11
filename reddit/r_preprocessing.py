@@ -42,39 +42,39 @@ def preprocess_data(data):
     data.drop(['test_nan', 'test_len'], axis=1, inplace=True)
     return data
 
-def add_toxlabel(fname, new_fname, mpath, e_path):
+def add_toxlabel(old_fpaths, new_fpaths, mpath, e_path):
     ''':param fname: path to reddit dataset
        :param new_fname: path to labelled reddit dataset
        :param mpath: path to model file
        :param epath: path to embeddings file'''
 
-    data = pd.read_csv(fname)
-    data = preprocess_data(data)
     t = data_proc.get_word_transform('embed', e_path)
     print('WE loaded')
-    data_embed = t(data['body'])
-    print('data')
-    model = pickle.load(open(mpath, 'rb'))
-    base = models.MLP()
-    print('model')
-    data['toxicity'] = base.predict(data_embed, model['model'], \
-                               args={'hid_layers':model['params']['hid_layers']})
-    data.to_csv(new_fname)
+    for fname, new_fname in zip(old_fpaths, new_fpaths):
+        data = pd.read_csv(fname)
+        import pdb; pdb.set_trace()
+        data = preprocess_data(data)
+
+        data_embed = t(data['body'])
+        print('data')
+        model = pickle.load(open(mpath, 'rb'))
+        base = models.MLP()
+        print('model')
+        data['toxicity'] = base.predict(data_embed, model['model'], \
+                                   args={'hid_layers':model['params']['hid_layers']}).values
+        data.to_csv(new_fname)
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Params')
-    parser.add_argument("old_fpath", type=str, default=None)
-    parser.add_argument("new_fpath", type=str, default=None)
-    parser.add_argument("mpath", type=str, default=None)
-    args = parser.parse_args()
-
     assert (os.getcwd().split('/')[-1] == 'civil_comments') or \
                     (os.getcwd().split('/')[-1] == 'civil_liberties')
-    old_fpath = join(os.getcwd(), args.old_fpath)
-    new_fpath = join(os.getcwd(), args.new_fpath)
-    m_path = join(os.getcwd(), args.mpath)
-    add_toxlabel(old_fpath, \
-                 new_fpath, \
+
+    old_fpaths = ['reddit/data/orig/2014b.csv']
+    new_fpaths = ['reddit/data/labeled/2014b_labeled.csv']
+    # old_fpaths = ['reddit/data/orig/test.csv']
+    # new_fpaths = ['reddit/data/labeled/test_labeled.csv']
+    m_path = 'reddit/labelgen_models/0810_labelgen.pkl'
+    add_toxlabel(old_fpaths, \
+                 new_fpaths, \
                  m_path, \
                  setup.get_wordvecspath())

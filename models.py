@@ -175,7 +175,7 @@ class LinearInvariantRiskMinimization(IRMBase):
 
         def update_params(envs, model, optimizer, args):
             ''':param envs: list of training env data structures, of form
-                             {'x':data (npArray), 'y':labels (npArray)}'''
+                             {'x':data (npArray) or (torch.Tensor), 'y':labels (npArray) or torch.Tensor}'''
             e_comp = {}
             for i, e in enumerate(envs):
                 e_comp[i] = {}
@@ -196,11 +196,11 @@ class LinearInvariantRiskMinimization(IRMBase):
 
             #Regularize the weights
             weight_norm = phi.norm().pow(2)
-            loss += l2_reg * weight_norm
+            loss += args['l2_reg'] * weight_norm
 
             #Add the invariance penalty
-            penalty_weight = (pen_wgt
-                              if step >= pen_ann else 1.0)
+            penalty_weight = (args['pen_wgt']
+                              if step >= args['penalty_anneal_iters'] else 1.0)
             loss += penalty_weight * train_penalty
             if penalty_weight > 1.0: # Rescale big loss
                 loss /= penalty_weight
@@ -233,18 +233,27 @@ class LinearInvariantRiskMinimization(IRMBase):
         for step in tqdm(range(args['n_iterations'])):
             if batching:
                 nbatch = math.ceil((len(envs[0])/envs[0].batch_size))  #Assume all envs have the same #batches/iter
-                for i in range(nbatch):
-                    input_envs = [next(dl) for dl in envs]
+                for input_envs in zip(*envs):
                     loss, train_nll, train_acc, train_penalty = \
-                              update_params(input_envs, phi, optimizer, {'l2_reg':args['l2_reg'], \
-                                                'pen_wgt':args['pen_wgt'], \
-                                                'penalty_anneal_iters':args['penalty_anneal_iters']})
+                        update_params(input_envs, phi, optimizer, {'l2_reg':args['l2_reg'], \
+                                        'pen_wgt':args['pen_wgt'], \
+                                        'penalty_anneal_iters':args['penalty_anneal_iters']})
+
+                    print(loss)
+
+                # for i in range(nbatch):
+                #     import pdb; pdb.set_trace()
+                #     input_envs = [next(dl) for dl in envs_iters]
+                #     loss, train_nll, train_acc, train_penalty = \
+                #               update_params(input_envs, phi, optimizer, {'l2_reg':args['l2_reg'], \
+                #                                 'pen_wgt':args['pen_wgt'], \
+                #                                 'penalty_anneal_iters':args['penalty_anneal_iters']})
             else:
                 loss, train_nll, train_acc, train_penalty = \
                               update_params(envs, phi, optimizer, {'l2_reg':args['l2_reg'], \
                                             'pen_wgt':args['pen_wgt'], \
                                             'penalty_anneal_iters':args['penalty_anneal_iters']})
-                print(loss)
+
             #Printing and Logging
             if step % 1000 == 0:
                 logging.info([np.int32(step),

@@ -9,19 +9,55 @@ sys.path.append(join(os.getcwd(), 'launchfiles'))
 
 import setup_params as setup
 
-# def get_reddit_datapath(v):
-#     hostname = socket.gethostname()
-#     if hostname == "Roberts-MacBook-Pro.local":
-#         if v == 'gendered':
-#             return "data/reddit/final/2014_gendered.csv"
-#         elif v == 'baseline':
-#             return "data/reddit/final/2014b.csv"
-#         else:
-#             assert False
-#     else:
-#         # return "~/civil_comments/data/all_data.csv"
-#         raise Exception('Put this datapath in')
+def get_reddit_datapath(v):
+    if v == 'gendered':
+        return "reddit/data/labeled/2014_gendered_labeled.csv"
+    elif v == 'baseline':
+        return "reddit/data/labeled/2014b_labeled.csv"
+    else:
+        assert False
 
+
+def hyp_subreddit_oodgen_setup():
+    expdir = setup.get_expdir('subreddit_oodgen')
+    data_fname = join(os.getcwd(), get_reddit_datapath('gendered'))
+    #Params
+    seeds = [10000, 8079, 501]
+    epochs = [100, 200]
+    n_batches = [400, 1000, 5000]
+    hid_layers = [1]
+    lr = [0.01, 0.001, 0.0001]
+    l2 = [0.1, 1.0, 10]
+    pen_wgt = [1000 5000 10000]
+    pen_ann = [1]
+
+    cmdfile = join(expdir, 'cmdfile.sh')
+    with open(cmdfile, 'w') as cmdf:
+        for id, combo in enumerate(itertools.product(seeds, epochs, n_batches, hid_layers, lr, l2)):
+            command_str = \
+            '''python reddit/r_main.py {id} {expdir} {data_fname} {l_noise} -seed {seed} -inc_hyperparams 1 -epochs {epoch} -n_batches {batch} -hid_layers {hid} -lr {lr} -l2 {l2} -pen_wgt {pen_wgt} -pen_ann {pen_ann}\n'''
+            command_str = command_str.format(
+                id=id,
+                expdir=expdir,
+                data_fname=data_fname,
+                l_noise=0,
+                seed=combo[0],
+                epoch=combo[1],
+                batch=combo[2],
+                hid=combo[3],
+                lr=combo[4],
+                l2=combo[5],
+                pen_wgt=combo[6],
+                pen_ann=combo[7]
+            )
+            cmdf.write(command_str)
+
+    #Return cmdfile name
+    sys.stdout.write(expdir)
+    sys.stdout.flush()
+
+
+#LABELGEN
 def hyp_labelgen_setup():
     expdir = setup.get_expdir('reddit_label_gen')
     data_fname = setup.get_datapath()
@@ -88,11 +124,16 @@ def hyp_labelgen_setup():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Params')
-    parser.add_argument("hparams", type=int, default=None)
     parser.add_argument("label_gen", type=int, default=None)
+    parser.add_argument("hparams", type=int, default=None)
     args = parser.parse_args()
 
-    if args.label_gen == 1:
+    if args.label_gen == 0:
+        if args.hparams == 0:
+            subreddit_oodgen_setup()
+        else:
+            hyp_subreddit_oodgen_setup()
+    elif args.label_gen == 1:
         if args.hparams == 0:
             labelgen_setup()
         else:

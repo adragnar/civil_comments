@@ -59,7 +59,7 @@ class ToxicityDataset(Dataset):
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.dataset = data[list(rel_cols.keys())]
+        self.dataset = data[list(rel_cols.values())]
         self.cols = rel_cols
         self.transform = transform
         self.dim = 300
