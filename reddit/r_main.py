@@ -48,16 +48,9 @@ def evaluate(envs, model, ltype='ACC'):
 
     return float(num_corr/(sum([len(dl) for dl in envs])))
 
-
-def subreddit_oodgen(id, expdir, data_fname, args, algo_args):
-    logger_fname = os.path.join(expdir, 'log_{}.txt'.format(str(id)))
-    logging.basicConfig(filename=logger_fname, level=logging.DEBUG)
-
-    #Load Data
-    t = data_proc.get_word_transform('embed', setup.get_wordvecspath())
-    logging.info('WEs Loaded')
+def generate_data(t, data_fname, label_noise, nbatches):
     thresh = 0.4
-    full_data = pd.read_csv(data_fname)
+    full_data = pd.read_csv(data_fname); full_Data = full_data.sample(n=1000)
     full_data['comment_len'] = full_data['body'].apply(lambda x: 1 if (len(str(x)) > 15) else 0)
     full_data = full_data[full_data['comment_len'] == 1]; full_data.reset_index(inplace=True)
     full_data['toxicity'] = full_data['toxicity'].apply((lambda x: 1 if x > thresh else 0))
@@ -72,13 +65,13 @@ def subreddit_oodgen(id, expdir, data_fname, args, algo_args):
         #Generate raw dataframe
         df = full_data[full_data['subreddit'] == sub][['body', 'toxicity']]; df.reset_index(inplace=True)
         df = df.reset_index()
-        if args['label_noise'] > 0:  #Add label noise if needed
-            df['toxicity'] = add_label_noise(df['toxicity'], args['label_noise'])
+        if label_noise > 0:  #Add label noise if needed
+            df['toxicity'] = add_label_noise(df['toxicity'], label_noise)
 
         #Make formal data sturctures
         df = data_proc.ToxicityDataset(df, \
                      rel_cols={'data':'body', 'labels':'toxicity'}, transform=t)
-        df = DataLoader(df, batch_size=math.ceil(float(len(df)/algo_args['n_batches'])), shuffle=True)
+        df = DataLoader(df, batch_size=math.ceil(float(len(df)/nbatches)), shuffle=True)
 
         #Place in train or test
         if sub in train_subs:
@@ -87,24 +80,60 @@ def subreddit_oodgen(id, expdir, data_fname, args, algo_args):
             test_envs.append(df)
     logging.info('Data Loaded')
 
-    #Train Models
-    base = models.LinearInvariantRiskMinimization('cls')
-    errors, penalties, losses = base.train(train_envs, \
-                                        args['seed'], algo_args, batching=True)
-    to_save_model = {'model_base':models.LinearInvariantRiskMinimization('cls'), \
-                     'model':base.model}
-    #Evaluate
-    train_loss = evaluate(train_envs, base, ltype='BCE')
-    train_acc = evaluate(train_envs, base, ltype='ACC')
-    test_loss = evaluate(test_envs, base, ltype='BCE')
-    test_acc = evaluate(test_envs, base, ltype='ACC')
+    return train_envs, test_envs
 
-    irm_res = {'id':{'params':args, 'algo_params':algo_args}, \
-                    'results':{'train_acc':train_acc, 'test_acc':test_acc, \
-                              'train_loss':train_loss, 'test_loss':test_loss}, \
-                    'losses':losses, \
-                    'model':to_save_model}
-    pickle.dump(irm_res, open(join(expdir, '{}_irm.pkl'.format(id)), 'wb'))
+def subreddit_oodgen(id, expdir, data_fname, args, algo_args, load_model=False):
+    logger_fname = os.path.join(expdir, 'log_{}.txt'.format(str(id)))
+    logging.basicConfig(filename=logger_fname, level=logging.DEBUG)
+
+    #Load Data
+    t = data_proc.get_word_transform('embed', setup.get_wordvecspath())
+    logging.info('WEs Loaded')
+
+    train_envs, test_envs = generate_data(t, data_fname, args['label_noise'], \
+                                           algo_args['n_batches'])
+
+    #Train Models
+    if not load_model:
+        base = models.LinearInvariantRiskMinimization('cls')
+        errors, penalties, losses = base.train(train_envs, \
+                                            args['seed'], algo_args, batching=True)
+        to_save_model = {'base_model':models.LinearInvariantRiskMinimization('cls'), \
+                         'model':base.model}
+
+        #Evaluate
+        train_loss = evaluate(train_envs, base, ltype='BCE')
+        train_acc = evaluate(train_envs, base, ltype='ACC')
+        test_loss = evaluate(test_envs, base, ltype='BCE')
+        test_acc = evaluate(test_envs, base, ltype='ACC')
+
+        irm_res = {'id':{'params':args, 'algo_params':algo_args}, \
+                        'results':{'train_acc':train_acc, 'test_acc':test_acc, \
+                                  'train_loss':train_loss, 'test_loss':test_loss}, \
+                        'losses':losses, \
+                        'model':to_save_model}
+        pickle.dump(irm_res, open(join(expdir, '{}_irm.pkl'.format(id)), 'wb'))
+
+    else:
+        for f in os.listdir(load_model):
+            if 'irm' not in f:
+                continue
+            fpath = join(load_model, f)
+            import pdb; pdb.set_trace()
+            base_data = data_proc.load_saved_model(fpath)
+
+            #Evaluate
+            base = base_data['model']
+            train_loss = evaluate(train_envs, base, ltype='BCE')
+            train_acc = evaluate(train_envs, base, ltype='ACC')
+            test_loss = evaluate(test_envs, base, ltype='BCE')
+            test_acc = evaluate(test_envs, base, ltype='ACC')
+
+            #Save Data
+            base_data['results'] = {'train_acc':train_acc, 'test_acc':test_acc, \
+                      'train_loss':train_loss, 'test_loss':test_loss}
+            pickle.dump(base_data, open(fpath, 'wb'))
+
 
 
 if __name__ == '__main__':
@@ -145,4 +174,5 @@ if __name__ == '__main__':
                       'pen_wgt':args.pen_wgt,
                       'penalty_anneal_iters':args.pen_ann
                       }
-    subreddit_oodgen(args.id, args.expdir, args.data_fname, params, algo_params)
+    subreddit_oodgen(args.id, args.expdir, args.data_fname, params, algo_params, \
+    load_model='/scratch/hdd001/home/adragnar/experiments/civil_comments/subreddit_oodgen/1597183186.5170383')
