@@ -193,7 +193,7 @@ def load_saved_model(mpath):
     '''Given path to a model data structure manually saved, reconstruct the
     appropiate model objext (ie - such that .predict() can be called)'''
     model_info = pickle.load(open(mpath, 'rb'))
-    import pdb; pdb.set_trace()
+
     if type(model_info['model']) != dict:  #If model can be stored straight
         return model_info['model']
 
@@ -204,7 +204,7 @@ def load_saved_model(mpath):
         base.model.load_state_dict(model_info['model']['model_params'])
 
     #Reconsturcted Linear IRM
-    elif set(['base_model', 'model']) ==  set(model_info['model'].keys()):
+    elif set(['base_model', 'model']) ==  set(model_info['model'].keys()): 
         base = model_info['model']['base_model']
         base.model = model_info['model']['model']
     else:

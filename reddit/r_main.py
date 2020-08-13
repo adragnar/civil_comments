@@ -11,6 +11,7 @@ import copy
 import math
 import pickle
 import socket
+import time
 
 import pandas as pd
 import numpy as np
@@ -30,27 +31,40 @@ def add_label_noise(data, lnoise):
     return data.apply(lambda x: np.random.binomial(1, lnoise) if (x == 0)\
                                     else np.random.binomial(1, (1 - lnoise)))
 
-def evaluate(envs, model, ltype='ACC'):
+def evaluate(envs, model, ltype=['ACC']):
     '''Envs - list of dataloaders, each with data from diff env'''
-    num_corr = 0
+
+    tot_samples = sum([len(dl.dataset) for dl in envs])
+
+    acc = 0
+    loss = 0
     for dl in envs:
         for batch_idx, sample_batch in enumerate(dl):
             probs = model.predict(sample_batch['x'].detach().numpy())
-            preds = ref.pred_binarize(probs)
             labels = sample_batch['y'].detach().numpy().squeeze()
-            if ltype == 'ACC':
-                num_corr += np.abs(preds - labels).sum()
-            elif ltype == 'BCE':
-                ce = np.sum((labels * np.log(preds)) + ((1 - labels)*np.log(1-preds)))
-                num_corr += ce
-            else:
-                raise Exception('Unimplemented')
+            if 'ACC' in ltype:
+                preds = ref.pred_binarize(probs)
+                ncorr = np.logical_not(np.abs(preds - labels)).sum()
+                acc += float(ncorr/tot_samples)
+            # if 'BCE' in ltype:
+            #     # ce = np.sum((labels * np.log(probs)) + (np.abs((1 - labels))*np.log(1-probs)))
+            #     loss += float(ref.compute_loss(preds, labels, ltype='ACC') * \
+            #                   len(labels)/tot_batches)
 
-    return float(num_corr/(sum([len(dl) for dl in envs])))
+            # if np.isnan(acc) or np.isnan(loss):
+            #     import pdb; pdb.set_trace()
+            #     pass
+
+    if set(['ACC']) == set(ltype):
+        return acc
+    elif set(['BCE']) == set(ltype):
+        return loss
+    elif set(['ACC', 'BCE']) == set(ltype):
+        return (loss, acc)
 
 def generate_data(t, data_fname, label_noise, nbatches):
     thresh = 0.4
-    full_data = pd.read_csv(data_fname); full_Data = full_data.sample(n=1000)
+    full_data = pd.read_csv(data_fname)
     full_data['comment_len'] = full_data['body'].apply(lambda x: 1 if (len(str(x)) > 15) else 0)
     full_data = full_data[full_data['comment_len'] == 1]; full_data.reset_index(inplace=True)
     full_data['toxicity'] = full_data['toxicity'].apply((lambda x: 1 if x > thresh else 0))
@@ -92,6 +106,7 @@ def subreddit_oodgen(id, expdir, data_fname, args, algo_args, load_model=False):
 
     train_envs, test_envs = generate_data(t, data_fname, args['label_noise'], \
                                            algo_args['n_batches'])
+    logging.info('Data Loaded')
 
     #Train Models
     if not load_model:
@@ -102,10 +117,8 @@ def subreddit_oodgen(id, expdir, data_fname, args, algo_args, load_model=False):
                          'model':base.model}
 
         #Evaluate
-        train_loss = evaluate(train_envs, base, ltype='BCE')
-        train_acc = evaluate(train_envs, base, ltype='ACC')
-        test_loss = evaluate(test_envs, base, ltype='BCE')
-        test_acc = evaluate(test_envs, base, ltype='ACC')
+        train_loss, train_acc = evaluate(train_envs, base, ltype=['ACC', 'BCE'])
+        test_loss, test_acc = evaluate(test_envs, base, ltype=['ACC', 'BCE'])
 
         irm_res = {'id':{'params':args, 'algo_params':algo_args}, \
                         'results':{'train_acc':train_acc, 'test_acc':test_acc, \
@@ -118,21 +131,28 @@ def subreddit_oodgen(id, expdir, data_fname, args, algo_args, load_model=False):
         for f in os.listdir(load_model):
             if 'irm' not in f:
                 continue
+
+            logging.info('starting {}'.format(f))
             fpath = join(load_model, f)
-            import pdb; pdb.set_trace()
-            base_data = data_proc.load_saved_model(fpath)
+            base = data_proc.load_saved_model(fpath)
 
             #Evaluate
-            base = base_data['model']
-            train_loss = evaluate(train_envs, base, ltype='BCE')
-            train_acc = evaluate(train_envs, base, ltype='ACC')
-            test_loss = evaluate(test_envs, base, ltype='BCE')
-            test_acc = evaluate(test_envs, base, ltype='ACC')
+            t1 = time.time()
+            train_acc = evaluate(train_envs, base, ltype=['ACC'])
+            test_acc = evaluate(test_envs, base, ltype=['ACC'])
 
             #Save Data
-            base_data['results'] = {'train_acc':train_acc, 'test_acc':test_acc, \
-                      'train_loss':train_loss, 'test_loss':test_loss}
+            base_data = pickle.load(open(fpath, 'rb'))
+            base_data['results'] = {'train_acc':train_acc, 'test_acc':test_acc}
+            ##TMPP
+            if 'model_base' in base_data['model'].keys():
+                base_data['model']['base_model'] = base_data['model']['model_base']
+                del base_data['model']['model_base']
+
             pickle.dump(base_data, open(fpath, 'wb'))
+
+            t2 = time.time()
+            logging.info('{} finished in {}s'.format(f, str(t2-t1)))
 
 
 
@@ -174,5 +194,4 @@ if __name__ == '__main__':
                       'pen_wgt':args.pen_wgt,
                       'penalty_anneal_iters':args.pen_ann
                       }
-    subreddit_oodgen(args.id, args.expdir, args.data_fname, params, algo_params, \
-    load_model='/scratch/hdd001/home/adragnar/experiments/civil_comments/subreddit_oodgen/1597183186.5170383')
+    subreddit_oodgen(args.id, args.expdir, args.data_fname, params, algo_params)
