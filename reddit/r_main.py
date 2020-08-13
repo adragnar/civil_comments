@@ -92,7 +92,6 @@ def generate_data(t, data_fname, label_noise, nbatches):
             train_envs.append(df)
         elif sub in test_subs:
             test_envs.append(df)
-    logging.info('Data Loaded')
 
     return train_envs, test_envs
 
@@ -110,6 +109,26 @@ def subreddit_oodgen(id, expdir, data_fname, args, algo_args, load_model=False):
 
     #Train Models
     if not load_model:
+        #Baseline Logistic Regression
+        full_train = pd.concat([d.dataset.dataset for d in train_envs], ignore_index=True)[['toxicity', 'body']]
+        full_train = data_proc.ToxicityDataset(full_train, rel_cols={'data':'body', 'labels':'toxicity'}, transform=t)[:]
+        full_test = pd.concat([d.dataset.dataset for d in test_envs], ignore_index=True)[['toxicity', 'body']]
+        full_test = data_proc.ToxicityDataset(full_test,  rel_cols={'data':'body', 'labels':'toxicity'}, transform=t)[:]
+
+        baseline_model = LogisticRegression(fit_intercept=True, penalty='l2', \
+                                               C=float(1/algo_args['l2_reg'])).fit(full_train['x'], full_train['y'])
+        train_acc = baseline_model.score(full_train['x'], full_train['y'])
+        test_acc = baseline_model.score(full_test['x'], full_test['y'])
+        to_save_model = baseline_model
+
+        baseline_res = {'id':{'params':args, 'algo_params':algo_args}, \
+                        'results':{'train_acc':train_acc, 'test_acc':test_acc}, \
+                        'model':to_save_model}
+        pickle.dump(baseline_res, open(join(expdir, '{}_baseline.pkl'.format(id)), 'wb'))
+
+
+
+        #Linear IRM
         base = models.LinearInvariantRiskMinimization('cls')
         errors, penalties, losses = base.train(train_envs, \
                                             args['seed'], algo_args, batching=True)
@@ -153,7 +172,6 @@ def subreddit_oodgen(id, expdir, data_fname, args, algo_args, load_model=False):
 
             t2 = time.time()
             logging.info('{} finished in {}s'.format(f, str(t2-t1)))
-
 
 
 if __name__ == '__main__':

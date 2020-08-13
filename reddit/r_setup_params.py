@@ -22,13 +22,13 @@ def hyp_subreddit_oodgen_setup():
     expdir = setup.get_expdir('subreddit_oodgen')
     data_fname = join(os.getcwd(), get_reddit_datapath('gendered'))
     #Params
-    seeds = [10000, 8079, 501]
+    seeds = [10000]
     epochs = [50]
     n_batches = [2000]
-    hid_layers = [1]
-    lr = [0.001, 0.0001]
-    l2 = [0.1, 1.0]
-    pen_wgt = [1000, 5000, 10000]
+    hid_layers = [1] 
+    lr = [1]
+    l2 = [0.1, 1.0, 10, 50]
+    pen_wgt = [1]
     pen_ann = [1]
 
     cmdfile = join(expdir, 'cmdfile.sh')
