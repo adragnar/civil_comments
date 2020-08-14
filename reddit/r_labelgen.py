@@ -38,8 +38,9 @@ def generate_data(t, seed, homedir=''):
     full_data = r_preprocessing.preprocess_data(full_data, \
                                                  {'data':'comment_text', \
                                                  'labels':'toxicity'}, \
-                                                 tox_thresh=0.4, c_len=15)
-
+                                                 tox_thresh=0.4, c_len=15, \
+                                                 social_media=True)
+                                                 
     #Remove Out-ofDomain test set
     full_data['gender'] = full_data[['male', 'female', 'transgender', \
                                      'other_gender', 'heterosexual', \
@@ -73,7 +74,7 @@ def reddit_labelgen(id, expdir, data_fname, args):
     logging.basicConfig(filename=logger_fname, level=logging.DEBUG)
 
     #Generate word embedding transform
-    t = data_proc.get_word_transform('embed', setup.get_wordvecspath())
+    t = data_proc.get_word_transform('embed', setup.get_wordvecspath(), proc=False)
     logging.info('WEs loaded')
     train_data, val_data, __ = generate_data(t, args['seed'])
     dataloader = DataLoader(train_data, batch_size=args['batch_size'], shuffle=True)

@@ -104,7 +104,7 @@ def subreddit_oodgen(id, expdir, data_fname, args, algo_args, load_model=False):
     logging.basicConfig(filename=logger_fname, level=logging.DEBUG)
 
     #Load Data
-    t = data_proc.get_word_transform('embed', setup.get_wordvecspath())
+    t = data_proc.get_word_transform('embed', setup.get_wordvecspath(), proc=False)
     logging.info('WEs Loaded')
 
     train_envs, test_envs = generate_data(t, data_fname, args['label_noise'], \

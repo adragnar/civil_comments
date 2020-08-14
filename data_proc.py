@@ -84,22 +84,29 @@ class GetEmbedding(object):
         model: word embedding model, dictionary of wrods -> embeds
     """
 
-    def __init__(self, model, stopwords=[]):
+    def __init__(self, model, stopwords=[], proc=True):
         self.model = model
         self.stopwords = stopwords
         self.unknown_embed = np.zeros(300)  #NOTE - this may not be same for all WEs
+        self.proc = proc
 
     def __call__(self, sample):
         ''':param sample: pd.Series'''
         if type(sample) == str:
-            words = sent_proc(sample, stopwords=self.stopwords)
+            if self.proc:
+                words = sent_proc(sample, stopwords=self.stopwords)
+            else:
+                words = sample.split(' ')
             if len(words) == 0:
                 words = set(np.zeros(300))
             sent_embedding = np.sum([self.model[w] if w in self.model else self.unknown_embed for w in words], axis = 0)
         elif type(sample) == pd.Series:
             sent_embedding = np.zeros((len(sample), 300))
             for i, txt in enumerate(sample):
-                words = sent_proc(txt, stopwords=self.stopwords)
+                if self.proc:
+                    words = sent_proc(txt, stopwords=self.stopwords)
+                else:
+                    words = txt.split(' ')
                 if len(words) == 0:
                     words = set(np.zeros(300))
                 sent_embedding[i, :] = np.sum([self.model[w] if w in self.model else self.unknown_embed for w in words], axis = 0)
@@ -158,10 +165,12 @@ from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 STOPWORDS = set(stopwords.words('english'))
 
-def get_word_transform(e_type, fpath):
+def get_word_transform(e_type, fpath, proc=True):
+    ''':param proc: legacy term, included if want to do preprocessing with sent_proc
+        within embedding '''
     if e_type == 'embed':
         word2vec, _, _ = load_word_vectors(fpath)
-        t = GetEmbedding(word2vec, stopwords=STOPWORDS)
+        t = GetEmbedding(word2vec, stopwords=STOPWORDS, proc=proc)
     elif e_type == 'BOW':
         word_freq = pickle.load(open(fpath, 'rb'))
         vocabulary = sorted([x for x in word_freq if ((word_freq[x] > 20) and (word_freq[x] < 1e3))])
@@ -189,6 +198,9 @@ def sent_proc(txt, stopwords=[], lem=None):
         words = {lem.lemmatize(w) for w in words}
     return words
 
+
+
+#Model Loading For later
 def load_saved_model(mpath):
     '''Given path to a model data structure manually saved, reconstruct the
     appropiate model objext (ie - such that .predict() can be called)'''
@@ -204,7 +216,7 @@ def load_saved_model(mpath):
         base.model.load_state_dict(model_info['model']['model_params'])
 
     #Reconsturcted Linear IRM
-    elif set(['base_model', 'model']) ==  set(model_info['model'].keys()): 
+    elif set(['base_model', 'model']) ==  set(model_info['model'].keys()):
         base = model_info['model']['base_model']
         base.model = model_info['model']['model']
     else:

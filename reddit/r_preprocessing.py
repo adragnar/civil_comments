@@ -18,6 +18,15 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import torch.nn as nn
 
+from ekphrasis.classes.preprocessor import TextPreProcessor
+from ekphrasis.classes.tokenizer import SocialTokenizer
+import re
+
+import nltk
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+STOPWORDS = set(stopwords.words('english'))
+
 from tqdm import tqdm
 
 import data_proc
@@ -25,19 +34,58 @@ import models
 import setup_params as setup
 import r_setup_params as reddit_setup
 
-def preprocess_data(data, rel_cols, tox_thresh=None, c_len=15):
+
+
+def preprocess_data(data, rel_cols, tox_thresh=None, c_len=15, \
+                                 social_media=False, stopwords=[]):
     '''Raw preprocessing to be done before data is used on both data All non nan
        values stuff controlled by kwargs
     :param data: pandas dataframe.
     :param rel_cols dictionary mapping keys (data, labels) to names in given dset
     :param tox_thresh: threshold for binarizing tox label (if dataset has labels)
-    :param c_len: min length of comment'''
+    :param c_len: min length of comment
+    :param social_media: Whether to do a variety of social-media specific preprocessing
+    :param stopwords: words to take out if social_media=True'''
 
     #Clean Target
     #remove Nans in comment text column
     data['test_nan']= data[rel_cols['data']].apply(lambda x: 1 if type(x) == str else 0)
     data = data[data['test_nan'] == 1]; data.reset_index(inplace=True)
     data.drop(['test_nan'], axis=1, inplace=True)
+
+    #Do social media preprocess
+    if social_media:
+        def proc_social(words, stopwords=[]):
+            '''Remove html tags and non-words from text preproc
+               words: list of tokens'''
+            #html
+            words = [re.sub(r'<.*?>', '', w).lower() for w in words]
+
+            #stopwords and alphanumeric
+            words = [re.sub(r'\W+', '', w).lower() for w in words \
+                     if re.sub(r'\W+', '', w).lower() not in stopwords]
+
+            #Remove letter artefacts
+            words = [w for w in words if ((len(w) > 1) or (w in ['a', 'i', 'u']))]
+            return words
+
+        text_processor = TextPreProcessor(
+            # terms that will be normalized
+            normalize=['url', 'email', 'percent', 'money', 'phone', 'user', \
+                       'time', 'date', 'number'],
+            fix_html=True,  # fix HTML tokens
+            segmenter="english",
+            corrector="english",
+            unpack_hashtags=True,  # perform word segmentation on hashtags
+            unpack_contractions=True,  # Unpack contractions (can't -> can not)
+            spell_correct_elong=False,  # spell correction for elongated words
+            tokenizer=SocialTokenizer(lowercase=True).tokenize,
+        )
+
+        data[rel_cols['data']] = data[rel_cols['data']].apply( \
+            lambda s: " ".join(proc_social(text_processor.pre_process_doc(s), \
+                                            stopwords=STOPWORDS)))
+
 
     #Remove too small comments
     if c_len is not None:
@@ -74,11 +122,11 @@ def add_toxlabel(old_fpaths, new_fpaths, rel_cols, mpath, e_path):
        :param mpath: path to model file
        :param epath: path to embeddings file'''
 
-    t = data_proc.get_word_transform('embed', e_path)
+    t = data_proc.get_word_transform('embed', e_path, proc=False)
     print('WE loaded')
     for fname, new_fname in zip(old_fpaths, new_fpaths):
         data = pd.read_csv(fname)
-        data = preprocess_data(data, rel_cols)
+        data = preprocess_data(data, rel_cols, c_len=0, social_media=True)
 
         data_embed = t(data['body'])
         print('data')

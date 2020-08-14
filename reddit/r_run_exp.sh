@@ -1,5 +1,5 @@
 max_proc=250
-labelgen=0
+labelgen=1
 hyp=1
 expdir=$(python reddit/r_setup_params.py $labelgen $hyp)
 cmdfile="$expdir/cmdfile.sh"
