@@ -25,24 +25,50 @@ import models
 import setup_params as setup
 import r_setup_params as reddit_setup
 
-def preprocess_data(data):
-    '''Clean up just-downloaded reddit datasets for later in pipeline
-    :param data: THe raw datset (pd df)
-    :return: pd Df
-    '''
+def preprocess_data(data, rel_cols, tox_thresh=None, c_len=15):
+    '''Raw preprocessing to be done before data is used on both data All non nan
+       values stuff controlled by kwargs
+    :param data: pandas dataframe.
+    :param rel_cols dictionary mapping keys (data, labels) to names in given dset
+    :param tox_thresh: threshold for binarizing tox label (if dataset has labels)
+    :param c_len: min length of comment'''
 
+    #Clean Target
     #remove Nans in comment text column
-    data['test_nan']= data['body'].apply(lambda x: 1 if type(x) == str else 0)
+    data['test_nan']= data[rel_cols['data']].apply(lambda x: 1 if type(x) == str else 0)
+    data = data[data['test_nan'] == 1]; data.reset_index(inplace=True)
+    data.drop(['test_nan'], axis=1, inplace=True)
 
-    #Drop comments that are too short
-    data['test_len'] = data['body'].apply(lambda x: 1 if (len(str(x)) > 15) else 0)
+    #Remove too small comments
+    if c_len is not None:
+        data['test_len'] = data[rel_cols['data']].apply(lambda x: 1 if (len(str(x)) > c_len) else 0)
+        data = data[data['test_len'] == 1]; data.reset_index(inplace=True)
+        data.drop(['test_len'], axis=1, inplace=True)
 
+    #Binarize labels if labelled
+    if tox_thresh is not None:
+        data[rel_cols['labels']] = data[rel_cols['labels']].apply((lambda x: 1 if x > tox_thresh else 0))
 
-    data = data[(data['test_nan'] == 1) & (data['test_len'] == 1)]
-    data.drop(['test_nan', 'test_len'], axis=1, inplace=True)
     return data
 
-def add_toxlabel(old_fpaths, new_fpaths, mpath, e_path):
+# def preprocess_data(data):
+#     '''Clean up just-downloaded reddit datasets for later in pipeline
+#     :param data: THe raw datset (pd df)
+#     :return: pd Df
+#     '''
+#
+#     #remove Nans in comment text column
+#     data['test_nan']= data['body'].apply(lambda x: 1 if type(x) == str else 0)
+#
+#     #Drop comments that are too short
+#     data['test_len'] = data['body'].apply(lambda x: 1 if (len(str(x)) > 15) else 0)
+#
+#
+#     data = data[(data['test_nan'] == 1) & (data['test_len'] == 1)]
+#     data.drop(['test_nan', 'test_len'], axis=1, inplace=True)
+#     return data
+
+def add_toxlabel(old_fpaths, new_fpaths, rel_cols, mpath, e_path):
     ''':param fname: path to reddit dataset
        :param new_fname: path to labelled reddit dataset
        :param mpath: path to model file
@@ -52,7 +78,7 @@ def add_toxlabel(old_fpaths, new_fpaths, mpath, e_path):
     print('WE loaded')
     for fname, new_fname in zip(old_fpaths, new_fpaths):
         data = pd.read_csv(fname)
-        data = preprocess_data(data)
+        data = preprocess_data(data, rel_cols)
 
         data_embed = t(data['body'])
         print('data')
@@ -68,10 +94,12 @@ if __name__ == '__main__':
 
     # old_fpaths = ['reddit/data/orig/2014b.csv']
     # new_fpaths = ['reddit/data/labeled/2014b_labeled.csv']
-    old_fpaths = ['reddit/data/orig/test.csv']
-    new_fpaths = ['reddit/data/labeled/test_labeled.csv']
+    old_fpaths = ['reddit/data/orig/2014_gendered_test.csv']
+    new_fpaths = ['reddit/data/labeled/2014_gendered_labeled_test.csv']
     m_path = 'reddit/labelgen_models/0_redlgen.pkl'
+    rel_cols = {'data':'body'}
     add_toxlabel(old_fpaths, \
                  new_fpaths, \
+                 rel_cols, \
                  m_path, \
                  setup.get_wordvecspath())

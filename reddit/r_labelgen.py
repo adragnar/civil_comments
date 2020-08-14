@@ -29,14 +29,16 @@ import setup_params as setup
 import ref
 from ref import make_tensor
 
+import r_preprocessing
+
 def generate_data(t, seed, homedir=''):
     full_data = pd.read_csv(setup.get_datapath(homedir))
 
     #Dataset Level Preprocessing
-    thresh = 0.4
-    full_data['comment_len'] = full_data['comment_text'].apply(lambda x: 1 if (len(str(x)) > 15) else 0)
-    full_data = full_data[full_data['comment_len'] == 1]
-    full_data['toxicity'] = full_data['toxicity'].apply((lambda x: 1 if x > thresh else 0))
+    full_data = r_preprocessing.preprocess_data(full_data, \
+                                                 {'data':'comment_text', \
+                                                 'labels':'toxicity'}, \
+                                                 tox_thresh=0.4, c_len=15)
 
     #Remove Out-ofDomain test set
     full_data['gender'] = full_data[['male', 'female', 'transgender', \

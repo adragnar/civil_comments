@@ -25,6 +25,8 @@ import models
 import setup_params as setup
 import ref
 
+import r_preprocessing
+
 def add_label_noise(data, lnoise):
     '''Given a pandas series with binary labels, flip with probability lnoise
     :return pd.Series'''
@@ -32,7 +34,8 @@ def add_label_noise(data, lnoise):
                                     else np.random.binomial(1, (1 - lnoise)))
 
 def evaluate(envs, model, ltype=['ACC']):
-    '''Envs - list of dataloaders, each with data from diff env'''
+    ''':param envs - list of dataloaders, each with data from diff env
+       :param model: a base model with .predict fnc'''
 
     tot_samples = sum([len(dl.dataset) for dl in envs])
 
@@ -63,12 +66,13 @@ def evaluate(envs, model, ltype=['ACC']):
         return (loss, acc)
 
 def generate_data(t, data_fname, label_noise, nbatches):
-    thresh = 0.4
     full_data = pd.read_csv(data_fname)
-    full_data['comment_len'] = full_data['body'].apply(lambda x: 1 if (len(str(x)) > 15) else 0)
-    full_data = full_data[full_data['comment_len'] == 1]; full_data.reset_index(inplace=True)
-    full_data['toxicity'] = full_data['toxicity'].apply((lambda x: 1 if x > thresh else 0))
 
+    #Dataset Level Preprocessing
+    full_data = r_preprocessing.preprocess_data(full_data, \
+                                                 {'data':'body', \
+                                                 'labels':'toxicity'}, \
+                                                 tox_thresh=0.4, c_len=15)
 
     #Get partition data into environments
     train_subs = ['TheRedPill', 'MensRights']
