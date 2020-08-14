@@ -46,17 +46,20 @@ def evaluate(envs, model, ltype=['ACC']):
             probs = model.predict(sample_batch['x'].detach().numpy())
             labels = sample_batch['y'].detach().numpy().squeeze()
             if 'ACC' in ltype:
-                preds = ref.pred_binarize(probs)
-                ncorr = np.logical_not(np.abs(preds - labels)).sum()
-                acc += float(ncorr/tot_samples)
-            # if 'BCE' in ltype:
+                batch_acc = ref.compute_loss(probs, labels, ltype='ACC')
+                acc += float( batch_acc * \
+                           len(labels) / tot_samples)
+                # preds = ref.pred_binarize(probs)
+                # ncorr = np.logical_not(np.abs(preds - labels)).sum()
+                # acc += float(ncorr/tot_samples)
+            if 'BCE' in ltype:
             #     # ce = np.sum((labels * np.log(probs)) + (np.abs((1 - labels))*np.log(1-probs)))
-            #     loss += float(ref.compute_loss(preds, labels, ltype='ACC') * \
-            #                   len(labels)/tot_batches)
+                batch_loss = ref.compute_loss(probs, labels, ltype='BCE')
+                loss += float(batch_loss * \
+                              len(labels)/tot_samples)
 
-            # if np.isnan(acc) or np.isnan(loss):
-            #     import pdb; pdb.set_trace()
-            #     pass
+            if np.isnan(batch_acc) or np.isnan(batch_loss):
+                logging.debug('Nan loss or acc - probs {}'.format(str(probs)))
 
     if set(['ACC']) == set(ltype):
         return acc
@@ -79,6 +82,7 @@ def generate_data(t, data_fname, label_noise, nbatches):
     test_subs = ['TwoXChromosomes']
     train_envs = []  #ASsume that this data comes with a 'toxicity' label associated
     test_envs = []  #ASsume that this data comes with a 'toxicity' label associated
+    # import pdb; pdb.set_trace()
     for sub in (train_subs + test_subs):
         #Generate raw dataframe
         df = full_data[full_data['subreddit'] == sub][['body', 'toxicity']]; df.reset_index(inplace=True)
@@ -161,8 +165,8 @@ def subreddit_oodgen(id, expdir, data_fname, args, algo_args, load_model=False):
 
             #Evaluate
             t1 = time.time()
-            train_acc = evaluate(train_envs, base, ltype=['ACC'])
-            test_acc = evaluate(test_envs, base, ltype=['ACC'])
+            train_loss, train_acc = evaluate(train_envs, base, ltype=['BCE', 'ACC'])
+            test_loss, test_acc = evaluate(test_envs, base, ltype=['BCE', 'ACC'])
 
             #Save Data
             base_data = pickle.load(open(fpath, 'rb'))
