@@ -11,6 +11,7 @@ import copy
 import pickle
 import socket
 import logging
+import time
 
 import pandas as pd
 import numpy as np
@@ -40,7 +41,7 @@ def generate_data(t, seed, homedir=''):
                                                  'labels':'toxicity'}, \
                                                  tox_thresh=0.4, c_len=15, \
                                                  social_media=True)
-                                                 
+
     #Remove Out-ofDomain test set
     full_data['gender'] = full_data[['male', 'female', 'transgender', \
                                      'other_gender', 'heterosexual', \
@@ -72,13 +73,17 @@ def reddit_labelgen(id, expdir, data_fname, args):
     #Logging Setup
     logger_fname = os.path.join(expdir, 'log_{}.txt'.format(str(id)))
     logging.basicConfig(filename=logger_fname, level=logging.DEBUG)
+    t_orig = time.time()
 
     #Generate word embedding transform
     t = data_proc.get_word_transform('embed', setup.get_wordvecspath(), proc=False)
-    logging.info('WEs loaded')
+    logging.info('WEs Loaded, num_words: {}, time: {:+.2f}'.format(\
+                               len(t.model.vocab), (time.time() - t_orig)))
+
     train_data, val_data, __ = generate_data(t, args['seed'])
     dataloader = DataLoader(train_data, batch_size=args['batch_size'], shuffle=True)
-    logging.info('data loaded')
+    logging.info('Data Loaded, train_len: {}, val_len: {}, time: {:+.2f}'.format(\
+                             len(train_data), len(val_data), (time.time() - t_orig)))
 
     #Train model to distinguish.
     base = models.MLP()
@@ -100,6 +105,7 @@ def reddit_labelgen(id, expdir, data_fname, args):
 
     pickle.dump(final_results, open(join(expdir, '{}_redlgen.pkl'.format(id)), 'wb'))
 
+    logging.info('experiment done')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Params')

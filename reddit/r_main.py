@@ -82,6 +82,7 @@ def generate_data(t, data_fname, label_noise, nbatches):
     test_subs = ['TwoXChromosomes']
     train_envs = []  #ASsume that this data comes with a 'toxicity' label associated
     test_envs = []  #ASsume that this data comes with a 'toxicity' label associated
+    # import pdb; pdb.set_trace()
     for sub in (train_subs + test_subs):
         #Generate raw dataframe
         df = full_data[full_data['subreddit'] == sub][['body', 'toxicity']]; df.reset_index(inplace=True)
@@ -102,83 +103,90 @@ def generate_data(t, data_fname, label_noise, nbatches):
 
     return train_envs, test_envs
 
-def subreddit_oodgen(id, expdir, data_fname, args, algo_args, load_model=False):
+def subreddit_oodgen(id, expdir, data_fname, args, algo_args):
     logger_fname = os.path.join(expdir, 'log_{}.txt'.format(str(id)))
     logging.basicConfig(filename=logger_fname, level=logging.DEBUG)
+    t_orig = time.time()
 
     #Load Data
     t = data_proc.get_word_transform('embed', setup.get_wordvecspath(), proc=False)
-    logging.info('WEs Loaded')
+    logging.info('WEs Loaded, num_words: {}, time: {:+.2f}'.format(\
+                               len(t.model.vocab), (time.time() - t_orig)))
 
     train_envs, test_envs = generate_data(t, data_fname, args['label_noise'], \
                                            algo_args['n_batches'])
-    logging.info('Data Loaded')
+    logging.info('Data Loaded, train_len: {}, test_len: {}, time: {:+.2f}'.format(\
+                             str([len(dl.dataset) for dl in train_envs]), \
+                             str([len(dl.dataset) for dl in test_envs]), \
+                             (time.time() - t_orig)))
 
     #Train Models
-    if not load_model:
-        #Baseline Logistic Regression
-        full_train = pd.concat([d.dataset.dataset for d in train_envs], ignore_index=True)[['toxicity', 'body']]
-        full_train = data_proc.ToxicityDataset(full_train, rel_cols={'data':'body', 'labels':'toxicity'}, transform=t)[:]
-        full_test = pd.concat([d.dataset.dataset for d in test_envs], ignore_index=True)[['toxicity', 'body']]
-        full_test = data_proc.ToxicityDataset(full_test,  rel_cols={'data':'body', 'labels':'toxicity'}, transform=t)[:]
 
-        baseline_model = LogisticRegression(fit_intercept=True, penalty='l2', \
-                                               C=float(1/algo_args['l2_reg'])).fit(full_train['x'], full_train['y'])
-        train_acc = baseline_model.score(full_train['x'], full_train['y'])
-        test_acc = baseline_model.score(full_test['x'], full_test['y'])
-        to_save_model = baseline_model
+    #Baseline Logistic Regression
+    full_train = pd.concat([d.dataset.dataset for d in train_envs], ignore_index=True)[['toxicity', 'body']]
+    full_train = data_proc.ToxicityDataset(full_train, rel_cols={'data':'body', 'labels':'toxicity'}, transform=t)[:]
+    full_test = pd.concat([d.dataset.dataset for d in test_envs], ignore_index=True)[['toxicity', 'body']]
+    full_test = data_proc.ToxicityDataset(full_test,  rel_cols={'data':'body', 'labels':'toxicity'}, transform=t)[:]
 
-        baseline_res = {'id':{'params':args, 'algo_params':algo_args}, \
-                        'results':{'train_acc':train_acc, 'test_acc':test_acc}, \
-                        'model':to_save_model}
-        pickle.dump(baseline_res, open(join(expdir, '{}_baseline.pkl'.format(id)), 'wb'))
+    baseline_model = LogisticRegression(fit_intercept=True, penalty='l2', \
+                                           C=float(1/algo_args['l2_reg'])).fit(full_train['x'], full_train['y'])
+    train_acc = baseline_model.score(full_train['x'], full_train['y'])
+    test_acc = baseline_model.score(full_test['x'], full_test['y'])
+    to_save_model = baseline_model
+
+    baseline_res = {'id':{'params':args, 'algo_params':algo_args}, \
+                    'results':{'train_acc':train_acc, 'test_acc':test_acc}, \
+                    'model':to_save_model}
+    pickle.dump(baseline_res, open(join(expdir, '{}_baseline.pkl'.format(id)), 'wb'))
+    logging.info('Logistic regression done, time: {:+.2f}'.format(time.time() - t_orig))
 
 
+    #Linear IRM
+    base = models.LinearInvariantRiskMinimization('cls')
+    errors, penalties, losses = base.train(train_envs, \
+                                        args['seed'], algo_args, batching=True)
+    to_save_model = {'base_model':models.LinearInvariantRiskMinimization('cls'), \
+                     'model':base.model}
 
-        #Linear IRM
-        base = models.LinearInvariantRiskMinimization('cls')
-        errors, penalties, losses = base.train(train_envs, \
-                                            args['seed'], algo_args, batching=True)
-        to_save_model = {'base_model':models.LinearInvariantRiskMinimization('cls'), \
-                         'model':base.model}
+    #Evaluate
+    train_loss, train_acc = evaluate(train_envs, base, ltype=['ACC', 'BCE'])
+    test_loss, test_acc = evaluate(test_envs, base, ltype=['ACC', 'BCE'])
 
-        #Evaluate
-        train_loss, train_acc = evaluate(train_envs, base, ltype=['ACC', 'BCE'])
-        test_loss, test_acc = evaluate(test_envs, base, ltype=['ACC', 'BCE'])
+    irm_res = {'id':{'params':args, 'algo_params':algo_args}, \
+                    'results':{'train_acc':train_acc, 'test_acc':test_acc, \
+                              'train_loss':train_loss, 'test_loss':test_loss}, \
+                    'losses':losses, \
+                    'model':to_save_model}
+    pickle.dump(irm_res, open(join(expdir, '{}_irm.pkl'.format(id)), 'wb'))
+    logging.info('IRM done, time: {:+.2f}'.format(time.time() - t_orig))
 
-        irm_res = {'id':{'params':args, 'algo_params':algo_args}, \
-                        'results':{'train_acc':train_acc, 'test_acc':test_acc, \
-                                  'train_loss':train_loss, 'test_loss':test_loss}, \
-                        'losses':losses, \
-                        'model':to_save_model}
-        pickle.dump(irm_res, open(join(expdir, '{}_irm.pkl'.format(id)), 'wb'))
+    logging.info('experiment done')
 
-    else:
-        for f in os.listdir(load_model):
-            if 'irm' not in f:
-                continue
-
-            logging.info('starting {}'.format(f))
-            fpath = join(load_model, f)
-            base = data_proc.load_saved_model(fpath)
-
-            #Evaluate
-            t1 = time.time()
-            train_loss, train_acc = evaluate(train_envs, base, ltype=['BCE', 'ACC'])
-            test_loss, test_acc = evaluate(test_envs, base, ltype=['BCE', 'ACC'])
-
-            #Save Data
-            base_data = pickle.load(open(fpath, 'rb'))
-            base_data['results'] = {'train_acc':train_acc, 'test_acc':test_acc}
-            ##TMPP
-            if 'model_base' in base_data['model'].keys():
-                base_data['model']['base_model'] = base_data['model']['model_base']
-                del base_data['model']['model_base']
-
-            pickle.dump(base_data, open(fpath, 'wb'))
-
-            t2 = time.time()
-            logging.info('{} finished in {}s'.format(f, str(t2-t1)))
+        # for f in os.listdir(load_model):
+        #     if 'irm' not in f:
+        #         continue
+        #
+        #     logging.info('starting {}'.format(f))
+        #     fpath = join(load_model, f)
+        #     base = data_proc.load_saved_model(fpath)
+        #
+        #     #Evaluate
+        #     t1 = time.time()
+        #     train_loss, train_acc = evaluate(train_envs, base, ltype=['BCE', 'ACC'])
+        #     test_loss, test_acc = evaluate(test_envs, base, ltype=['BCE', 'ACC'])
+        #
+        #     #Save Data
+        #     base_data = pickle.load(open(fpath, 'rb'))
+        #     base_data['results'] = {'train_acc':train_acc, 'test_acc':test_acc}
+        #     ##TMPP
+        #     if 'model_base' in base_data['model'].keys():
+        #         base_data['model']['base_model'] = base_data['model']['model_base']
+        #         del base_data['model']['model_base']
+        #
+        #     pickle.dump(base_data, open(fpath, 'wb'))
+        #
+        #     t2 = time.time()
+        #     logging.info('{} finished in {}s'.format(f, str(t2-t1)))
 
 
 if __name__ == '__main__':

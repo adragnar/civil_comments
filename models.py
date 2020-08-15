@@ -2,7 +2,7 @@ import itertools
 import json
 import logging
 import os
-import warnings
+import time
 
 from abc import ABC, abstractmethod
 import math
@@ -19,6 +19,7 @@ from sklearn.linear_model import Lasso, LinearRegression, LogisticRegression
 
 from ref import make_tensor
 
+LOG_INTERVAL = 300
 
 class BaseMLP(nn.Module):
     def __init__(self, d, hid_dim):
@@ -91,6 +92,7 @@ class MLP():
         self.model = BaseMLP(dim_x, args['hid_layers'])
         optimizer = torch.optim.Adam(self.model.parameters(), lr=args['lr'])
 
+        t_last = time.time()
         for step in tqdm(range(args['n_iterations'])):
             if batching:
                 for idx, mbatch in enumerate(data):
@@ -102,8 +104,12 @@ class MLP():
                                      optimizer, l2_reg=args['l2_reg'])
 
             #Printing and Logging
-            if step % 1000 == 0:
-                logging.info([np.int32(step), loss.detach().cpu().numpy()])
+            if (step % 1000 == 0) or ((time.time() - t_last) > LOG_INTERVAL):
+                logging.info('step: {}, loss: {}, time: {:+.2f}'.format(\
+                            np.int32(step), loss.detach().cpu().numpy(), \
+                            (time.time() - t_last)))
+                t_last = time.time()
+
             losses.append(loss.detach().numpy())
         return losses
 
@@ -224,6 +230,7 @@ class LinearInvariantRiskMinimization(IRMBase):
         logging.info('[step, train nll, train acc, train penalty, test acc]')
 
         #Start the training loop
+        t_last = time.time()
         for step in tqdm(range(args['n_iterations'])):
             if batching:
                 nbatch = math.ceil((len(envs[0])/envs[0].batch_size))  #Assume all envs have the same #batches/iter
@@ -247,13 +254,14 @@ class LinearInvariantRiskMinimization(IRMBase):
                                             'penalty_anneal_iters':args['penalty_anneal_iters']})
 
             #Printing and Logging
-            if step % 5 == 0:
-                logging.info([np.int32(step),
-                              train_nll.detach().cpu().numpy(),
-                              train_acc.detach().cpu().numpy(),
-                              train_penalty.detach().cpu().numpy()]
+            if (step % 5 == 0) or ((time.time() - t_last) > LOG_INTERVAL):
+                logging.info('step: {}, loss: {}, acc: {}, ipen: {}, time: {:+.2f}'.format(\
+                                 np.int32(step), \
+                                 train_acc.detach().cpu().numpy(), \
+                                 train_penalty.detach().cpu().numpy(), \
+                                 (time.time() - t_last))
                              )
-
+                t_last = time.time()
 
             errors.append(train_nll.detach().numpy())
             penalties.append(train_penalty.detach().numpy())
