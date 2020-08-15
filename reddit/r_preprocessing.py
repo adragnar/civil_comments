@@ -85,7 +85,15 @@ def preprocess_data(data, rel_cols, tox_thresh=None, c_len=15, \
         data[rel_cols['data']] = data[rel_cols['data']].apply( \
             lambda s: " ".join(proc_social(text_processor.pre_process_doc(s), \
                                             stopwords=STOPWORDS)))
+    else:  #If no social media
+        def proc(txt, stopwords=[]):
+            words = txt.split(" ")
+            words = [re.sub(r'\W+', '', w).lower() for w in words \
+                     if re.sub(r'\W+', '', w).lower() not in stopwords]
+            return words
 
+        data[rel_cols['data']] = data[rel_cols['data']].apply(\
+                        lambda s: " ".join(proc(s, stopwords=STOPWORDS)))
 
     #Remove too small comments
     if c_len is not None:
@@ -126,8 +134,7 @@ def add_toxlabel(old_fpaths, new_fpaths, rel_cols, mpath, e_path):
     print('WE loaded')
     for fname, new_fname in zip(old_fpaths, new_fpaths):
         data = pd.read_csv(fname)
-        data = preprocess_data(data, rel_cols, c_len=0, social_media=True)
-
+        data = preprocess_data(data, rel_cols, c_len=0, social_media=False)
         data_embed = t(data['body'])
         print('data')
         model = data_proc.load_saved_model(mpath)
@@ -142,9 +149,9 @@ if __name__ == '__main__':
 
     # old_fpaths = ['reddit/data/orig/2014b.csv']
     # new_fpaths = ['reddit/data/labeled/2014b_labeled.csv']
-    old_fpaths = ['reddit/data/orig/2014_gendered_test.csv']
-    new_fpaths = ['reddit/data/labeled/2014_gendered_labeled_test.csv']
-    m_path = 'reddit/labelgen_models/0_redlgen.pkl'
+    old_fpaths = ['reddit/data/orig/2014_gendered.csv']
+    new_fpaths = ['reddit/data/labeled/2014_gendered_labeled.csv']
+    m_path = 'reddit/labelgen_models/0810_labelgen.pkl'
     rel_cols = {'data':'body'}
     add_toxlabel(old_fpaths, \
                  new_fpaths, \
