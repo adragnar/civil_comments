@@ -6,7 +6,7 @@ cmdfile="$expdir/cmdfile.sh"
 echo $cmdfile
 echo $expdir
 #Save code for reproducibility
-#python reproducibility.py $(pwd) $expdir
+python reproducibility.py "$(pwd)/reddit" $expdir
 
 num_cmds=`wc -l $cmdfile | cut -d' ' -f1`
 echo "Wrote $num_cmds commands to $cmdfile"
