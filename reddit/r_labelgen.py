@@ -40,7 +40,7 @@ def generate_data(t, seed, homedir=''):
                                                  {'data':'comment_text', \
                                                  'labels':'toxicity'}, \
                                                  tox_thresh=0.4, c_len=15, \
-                                                 social_media=True)
+                                                 text_clean='sm')
 
     #Remove Out-ofDomain test set
     full_data['gender'] = full_data[['male', 'female', 'transgender', \

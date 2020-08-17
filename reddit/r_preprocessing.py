@@ -37,7 +37,7 @@ import r_setup_params as reddit_setup
 
 
 def preprocess_data(data, rel_cols, tox_thresh=None, c_len=15, \
-                                 social_media=False, stopwords=[]):
+                                 text_clean='reg', stopwords=[]):
     '''Raw preprocessing to be done before data is used on both data All non nan
        values stuff controlled by kwargs
     :param data: pandas dataframe.
@@ -54,7 +54,7 @@ def preprocess_data(data, rel_cols, tox_thresh=None, c_len=15, \
     data.drop(['test_nan'], axis=1, inplace=True)
 
     #Do social media preprocess
-    if social_media:
+    if text_clean == 'sm':
         def proc_social(words, stopwords=[]):
             '''Remove html tags and non-words from text preproc
                words: list of tokens'''
@@ -85,7 +85,7 @@ def preprocess_data(data, rel_cols, tox_thresh=None, c_len=15, \
         data[rel_cols['data']] = data[rel_cols['data']].apply( \
             lambda s: " ".join(proc_social(text_processor.pre_process_doc(s), \
                                             stopwords=STOPWORDS)))
-    else:  #If no social media
+    elif text_clean == 'reg':  #If no social media
         def proc(txt, stopwords=[]):
             words = txt.split(" ")
             words = [re.sub(r'\W+', '', w).lower() for w in words \
@@ -94,6 +94,11 @@ def preprocess_data(data, rel_cols, tox_thresh=None, c_len=15, \
 
         data[rel_cols['data']] = data[rel_cols['data']].apply(\
                         lambda s: " ".join(proc(s, stopwords=STOPWORDS)))
+
+    elif text_clean == 'na':
+        pass
+    else:
+        raise Exception('Unimplemented cleaning')
 
     #Remove too small comments
     if c_len is not None:
@@ -134,7 +139,7 @@ def add_toxlabel(old_fpaths, new_fpaths, rel_cols, mpath, e_path):
     print('WE loaded')
     for fname, new_fname in zip(old_fpaths, new_fpaths):
         data = pd.read_csv(fname)
-        data = preprocess_data(data, rel_cols, c_len=0, social_media=False)
+        data = preprocess_data(data, rel_cols, c_len=0, text_clean='reg')
         data_embed = t(data['body'])
         print('data')
         model = data_proc.load_saved_model(mpath)
