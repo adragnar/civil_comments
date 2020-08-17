@@ -34,6 +34,27 @@ import models
 import setup_params as setup
 import r_setup_params as reddit_setup
 
+#For BERT
+# from __future__ import absolute_import
+# from __future__ import division
+# from __future__ import print_function
+# import torch.utils.data
+# import numpy as np
+# import pandas as pd
+# from tqdm import tqdm
+# import os
+# from os.path import join
+# import warnings
+from pytorch_pretrained_bert import BertTokenizer, BertForSequenceClassification, BertAdam
+from pytorch_pretrained_bert import BertConfig
+
+if torch.cuda.is_available():
+    device = torch.device('cuda')
+else:
+    device = torch.device('cpu')
+print(device)
+
+
 
 
 def preprocess_data(data, rel_cols, tox_thresh=None, c_len=15, \
@@ -112,22 +133,62 @@ def preprocess_data(data, rel_cols, tox_thresh=None, c_len=15, \
 
     return data
 
-# def preprocess_data(data):
-#     '''Clean up just-downloaded reddit datasets for later in pipeline
-#     :param data: THe raw datset (pd df)
-#     :return: pd Df
-#     '''
-#
-#     #remove Nans in comment text column
-#     data['test_nan']= data['body'].apply(lambda x: 1 if type(x) == str else 0)
-#
-#     #Drop comments that are too short
-#     data['test_len'] = data['body'].apply(lambda x: 1 if (len(str(x)) > 15) else 0)
-#
-#
-#     data = data[(data['test_nan'] == 1) & (data['test_len'] == 1)]
-#     data.drop(['test_nan', 'test_len'], axis=1, inplace=True)
-#     return data
+def bert_add_toxlabel(old_fpaths, new_fpaths, rel_cols, \
+                                 BERT_MODEL_PATH, BERT_FINETUNE_PATH):
+    def convert_lines(example, max_seq_length,tokenizer):
+        max_seq_length -=2
+        all_tokens = []
+        longer = 0
+        for text in tqdm(example):
+            tokens_a = tokenizer.tokenize(text)
+            if len(tokens_a)>max_seq_length:
+                tokens_a = tokens_a[:max_seq_length]
+                longer += 1
+            one_token = tokenizer.convert_tokens_to_ids(["[CLS]"]+tokens_a+["[SEP]"])+[0] * (max_seq_length - len(tokens_a))
+            all_tokens.append(one_token)
+        return np.array(all_tokens)
+
+    #Set up the BERT model
+    MAX_SEQUENCE_LENGTH = 220
+    SEED = 1234
+    BATCH_SIZE = 32
+    np.random.seed(SEED)
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed(SEED)
+    torch.backends.cudnn.deterministic = True
+
+    bert_config = BertConfig(join(BERT_FINETUNE_PATH, 'bert_config.json'))
+    tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_PATH, \
+                                      cache_dir=None,do_lower_case=True)
+
+    model = BertForSequenceClassification(bert_config, num_labels=1)
+    model.load_state_dict(torch.load(join(BERT_FINETUNE_PATH, \
+                                  "bert_pytorch.bin"), map_location=device))
+    model.to(device)
+    for param in model.parameters():
+        param.requires_grad = False
+    model.eval()
+
+    for fname, new_fname in zip(old_fpaths, new_fpaths):
+        data = pd.read_csv(fname)
+        data = preprocess_data(data, rel_cols, c_len=15, text_clean='na')
+        X = convert_lines(data["body"].fillna("DUMMY_VALUE"), \
+                                    MAX_SEQUENCE_LENGTH, tokenizer)
+
+        test_preds = np.zeros((len(X)))
+        test = torch.utils.data.TensorDataset(torch.tensor(X, dtype=torch.long))
+        test_loader = torch.utils.data.DataLoader(test, batch_size=32, shuffle=False)
+        tk0 = tqdm(test_loader)
+        for i, (x_batch,) in enumerate(tk0):
+            pred = model(x_batch.to(device), attention_mask=(x_batch > 0).to(device), labels=None)
+            test_preds[i * 32:(i + 1) * 32] = pred[:, 0].detach().cpu().squeeze().numpy()
+
+        test_pred = torch.sigmoid(torch.tensor(test_preds)).numpy().ravel()
+
+        #Save Results
+        data['toxicity'] = test_pred
+        data.to_csv(new_fname)
+
 
 def add_toxlabel(old_fpaths, new_fpaths, rel_cols, mpath, e_path):
     ''':param fname: path to reddit dataset
@@ -152,14 +213,25 @@ if __name__ == '__main__':
     assert (os.getcwd().split('/')[-1] == 'civil_comments') or \
                     (os.getcwd().split('/')[-1] == 'civil_liberties')
 
-    # old_fpaths = ['reddit/data/orig/2014b.csv']
-    # new_fpaths = ['reddit/data/labeled/2014b_labeled.csv']
-    old_fpaths = ['reddit/data/orig/2014_gendered.csv']
-    new_fpaths = ['reddit/data/labeled/2014_gendered_labeled.csv']
-    m_path = 'reddit/labelgen_models/0810_labelgen.pkl'
-    rel_cols = {'data':'body'}
-    add_toxlabel(old_fpaths, \
-                 new_fpaths, \
-                 rel_cols, \
-                 m_path, \
-                 setup.get_wordvecspath())
+    old_fpaths = ['reddit/data/orig/2014_gendered_test.csv']
+    new_fpaths = ['reddit/data/labeled/2014_gendered_bert_labeled.csv']
+    model = 'bert'
+
+    if model == 'bert':
+        pretrained_path = 'models/bert/bert_pretrained/uncased_L-12_H-768_A-12/'
+        finetuned_path = 'models/bert/bert_finetuned/'
+        rel_cols = {'data':'body'}
+        bert_add_toxlabel(old_fpaths, \
+                          new_fpaths, \
+                          rel_cols, \
+                          pretrained_path, \
+                          finetuned_path)
+
+    else:
+        m_path = 'reddit/labelgen_models/0810_labelgen.pkl'
+        rel_cols = {'data':'body'}
+        add_toxlabel(old_fpaths, \
+                     new_fpaths, \
+                     rel_cols, \
+                     m_path, \
+                     setup.get_wordvecspath())
