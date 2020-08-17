@@ -95,14 +95,14 @@ class GetEmbedding(object):
             words = sent_proc(sample, stopwords=self.stopwords)
             if len(words) == 0:
                 words = set(np.zeros(300))
-            sent_embedding = np.sum([self.model[w] if w in self.model else self.unknown_embed for w in words], axis = 0)
+            sent_embedding = np.mean([self.model[w] if w in self.model else self.unknown_embed for w in words], axis = 0)
         elif type(sample) == pd.Series:
             sent_embedding = np.zeros((len(sample), 300))
             for i, txt in enumerate(sample):
                 words = sent_proc(txt, stopwords=self.stopwords)
                 if len(words) == 0:
                     words = set(np.zeros(300))
-                sent_embedding[i, :] = np.sum([self.model[w] if w in self.model else self.unknown_embed for w in words], axis = 0)
+                sent_embedding[i, :] = np.mean([self.model[w] if w in self.model else self.unknown_embed for w in words], axis = 0)
 
         return sent_embedding
 
