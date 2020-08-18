@@ -149,9 +149,9 @@ def bert_add_toxlabel(old_fpaths, new_fpaths, rel_cols, \
         return np.array(all_tokens)
 
     #Set up the BERT model
-    MAX_SEQUENCE_LENGTH = 220
+    MAX_SEQUENCE_LENGTH = 400
     SEED = 1234
-    BATCH_SIZE = 32
+
     np.random.seed(SEED)
     torch.manual_seed(SEED)
     torch.cuda.manual_seed(SEED)
@@ -171,22 +171,23 @@ def bert_add_toxlabel(old_fpaths, new_fpaths, rel_cols, \
 
     for fname, new_fname in zip(old_fpaths, new_fpaths):
         data = pd.read_csv(fname)
-        data = preprocess_data(data, rel_cols, c_len=15, text_clean='na')
-        X = convert_lines(data["body"].fillna("DUMMY_VALUE"), \
+        data['proc_body'] = data[rel_cols['data']]
+        data = preprocess_data(data, {'data':'proc_body'}, c_len=15, text_clean='na')
+        X = convert_lines(data['proc_body'].fillna("DUMMY_VALUE"), \
                                     MAX_SEQUENCE_LENGTH, tokenizer)
-
+        bsize = 32
         test_preds = np.zeros((len(X)))
         test = torch.utils.data.TensorDataset(torch.tensor(X, dtype=torch.long))
-        test_loader = torch.utils.data.DataLoader(test, batch_size=32, shuffle=False)
+        test_loader = torch.utils.data.DataLoader(test, batch_size=bsize, shuffle=False)
         tk0 = tqdm(test_loader)
-        for i, (x_batch,) in enumerate(tk0):
+        for i, (x_batch,) in tqdm(enumerate(tk0)):
             pred = model(x_batch.to(device), attention_mask=(x_batch > 0).to(device), labels=None)
-            test_preds[i * 32:(i + 1) * 32] = pred[:, 0].detach().cpu().squeeze().numpy()
+            test_preds[i * bsize:(i + 1) * bsize] = pred[:, 0].detach().cpu().squeeze().numpy()
 
         test_pred = torch.sigmoid(torch.tensor(test_preds)).numpy().ravel()
 
         #Save Results
-        data['toxicity'] = test_pred
+        data['pred_toxicity'] = test_pred
         data.to_csv(new_fname)
 
 
@@ -200,12 +201,14 @@ def add_toxlabel(old_fpaths, new_fpaths, rel_cols, mpath, e_path):
     print('WE loaded')
     for fname, new_fname in zip(old_fpaths, new_fpaths):
         data = pd.read_csv(fname)
-        data = preprocess_data(data, rel_cols, c_len=0, text_clean='reg')
-        data_embed = t(data['body'])
+        data['proc_body'] = data[rel_cols['data']]
+
+        data = preprocess_data(data, {'data':'proc_body'}, c_len=0, text_clean='reg')
+        data_embed = t(data['proc_body'])
         print('data')
         model = data_proc.load_saved_model(mpath)
         print('model')
-        data['toxicity'] = model.predict(data_embed)
+        data['pred_toxicity'] = model.predict(data_embed)
         data.to_csv(new_fname)
 
 
@@ -213,23 +216,32 @@ if __name__ == '__main__':
     assert (os.getcwd().split('/')[-1] == 'civil_comments') or \
                     (os.getcwd().split('/')[-1] == 'civil_liberties')
 
-    old_fpaths = ['reddit/data/orig/2014_gendered_test.csv']
-    new_fpaths = ['reddit/data/labeled/2014_gendered_bert_labeled.csv']
-    model = 'bert'
+    parser = argparse.ArgumentParser(description='Params')
+    parser.add_argument("old_fpaths", type=str, default=None)
+    parser.add_argument("new_fpaths", type=str, default=None)
+    parser.add_argument("model", type=str, default=None)
+    parser.add_argument("data_type", type=str, default=None)
+    args = parser.parse_args()
 
-    if model == 'bert':
-        pretrained_path = 'models/bert/bert_pretrained/uncased_L-12_H-768_A-12/'
-        finetuned_path = 'models/bert/bert_finetuned/'
+    old_fpaths = [args.old_fpaths]  #'reddit/data/orig/2014_gendered.csv']
+    new_fpaths = [args.new_fpaths]  #'reddit/data/labeled/2014_gendered_bert_labeled.csv']
+
+    if args.data_type == 'jigsaw':
+        rel_cols = {'data':'comment_text'}
+    elif args.data_type == 'reddit':
         rel_cols = {'data':'body'}
+
+    if args.model == 'bert':
+        pretrained_path = 'reddit/labelgen_models/bert/bert_pretrained/uncased_L-12_H-768_A-12/'
+        finetuned_path = 'reddit/labelgen_models/bert/bert_finetuned/'
         bert_add_toxlabel(old_fpaths, \
                           new_fpaths, \
                           rel_cols, \
                           pretrained_path, \
                           finetuned_path)
 
-    else:
+    elif args.model == 'mlp':
         m_path = 'reddit/labelgen_models/0810_labelgen.pkl'
-        rel_cols = {'data':'body'}
         add_toxlabel(old_fpaths, \
                      new_fpaths, \
                      rel_cols, \
