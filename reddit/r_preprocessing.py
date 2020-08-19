@@ -71,7 +71,7 @@ def preprocess_data(data, rel_cols, tox_thresh=None, c_len=15, \
     #Clean Target
     #remove Nans in comment text column
     data['test_nan']= data[rel_cols['data']].apply(lambda x: 1 if type(x) == str else 0)
-    data = data[data['test_nan'] == 1]; data.reset_index(inplace=True)
+    data = data[data['test_nan'] == 1]; data.reset_index(inplace=True, drop=True)
     data.drop(['test_nan'], axis=1, inplace=True)
 
     #Do social media preprocess
@@ -124,7 +124,7 @@ def preprocess_data(data, rel_cols, tox_thresh=None, c_len=15, \
     #Remove too small comments
     if c_len is not None:
         data['test_len'] = data[rel_cols['data']].apply(lambda x: 1 if (len(str(x)) > c_len) else 0)
-        data = data[data['test_len'] == 1]; data.reset_index(inplace=True)
+        data = data[data['test_len'] == 1]; data.reset_index(inplace=True, drop=True)
         data.drop(['test_len'], axis=1, inplace=True)
 
     #Binarize labels if labelled

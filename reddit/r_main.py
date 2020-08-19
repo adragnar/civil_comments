@@ -68,14 +68,18 @@ def evaluate(envs, model, ltype=['ACC']):
     elif set(['ACC', 'BCE']) == set(ltype):
         return (loss, acc)
 
-def generate_data(t, data_fname, label_noise, nbatches):
-    full_data = pd.read_csv(data_fname)
+def generate_data(t, data_fname, label_noise, nbatches, text_clean='na', \
+                                                   tox_thresh=0.5, c_len=15):
+    full_data = pd.read_csv(data_fname); full_data = full_data.sample(n=100)
 
     #Dataset Level Preprocessing
+    #Remove random columns that keep showing up
+    full_data.drop(['Unnamed: 0', 'Unnamed: 0.1', 'Unnamed: 0.1.1', 'Index'], axis=1, inplace=True, errors='ignore')
     full_data = r_preprocessing.preprocess_data(full_data, \
                                                  {'data':'body', \
-                                                 'labels':'toxicity'}, \
-                                                 tox_thresh=0.4, c_len=15)
+                                                 'labels':'pred_toxicity'}, \
+                                                 text_clean=text_clean, \
+                                                 tox_thresh=tox_thresh, c_len=c_len)
 
     #Get partition data into environments
     train_subs = ['TheRedPill', 'MensRights']
@@ -85,14 +89,14 @@ def generate_data(t, data_fname, label_noise, nbatches):
     # import pdb; pdb.set_trace()
     for sub in (train_subs + test_subs):
         #Generate raw dataframe
-        df = full_data[full_data['subreddit'] == sub][['body', 'toxicity']]; df.reset_index(inplace=True)
+        df = full_data[full_data['subreddit'] == sub][['body', 'pred_toxicity']]; df.reset_index(inplace=True)
         df = df.reset_index()
         if label_noise > 0:  #Add label noise if needed
-            df['toxicity'] = add_label_noise(df['toxicity'], label_noise)
+            df['pred_toxicity'] = add_label_noise(df['pred_toxicity'], label_noise)
 
         #Make formal data sturctures
         df = data_proc.ToxicityDataset(df, \
-                     rel_cols={'data':'body', 'labels':'toxicity'}, transform=t)
+                     rel_cols={'data':'body', 'labels':'pred_toxicity'}, transform=t)
         df = DataLoader(df, batch_size=math.ceil(float(len(df)/nbatches)), shuffle=True)
 
         #Place in train or test
@@ -114,19 +118,19 @@ def subreddit_oodgen(id, expdir, data_fname, args, algo_args):
                                len(t.model.vocab), (time.time() - t_orig)))
 
     train_envs, test_envs = generate_data(t, data_fname, args['label_noise'], \
-                                           algo_args['n_batches'])
+                                           algo_args['n_batches'], text_clean=args['text_clean'])
     logging.info('Data Loaded, train_len: {}, test_len: {}, time: {:+.2f}'.format(\
                              str([len(dl.dataset) for dl in train_envs]), \
                              str([len(dl.dataset) for dl in test_envs]), \
                              (time.time() - t_orig)))
 
     #Train Models
-
+    import pdb; pdb.set_trace()
     #Baseline Logistic Regression
-    full_train = pd.concat([d.dataset.dataset for d in train_envs], ignore_index=True)[['toxicity', 'body']]
-    full_train = data_proc.ToxicityDataset(full_train, rel_cols={'data':'body', 'labels':'toxicity'}, transform=t)[:]
-    full_test = pd.concat([d.dataset.dataset for d in test_envs], ignore_index=True)[['toxicity', 'body']]
-    full_test = data_proc.ToxicityDataset(full_test,  rel_cols={'data':'body', 'labels':'toxicity'}, transform=t)[:]
+    full_train = pd.concat([d.dataset.dataset for d in train_envs], ignore_index=True)[['pred_toxicity', 'body']]
+    full_train = data_proc.ToxicityDataset(full_train, rel_cols={'data':'body', 'labels':'pred_toxicity'}, transform=t)[:]
+    full_test = pd.concat([d.dataset.dataset for d in test_envs], ignore_index=True)[['pred_toxicity', 'body']]
+    full_test = data_proc.ToxicityDataset(full_test,  rel_cols={'data':'body', 'labels':'pred_toxicity'}, transform=t)[:]
 
     baseline_model = LogisticRegression(fit_intercept=True, penalty='l2', \
                                            C=float(1/algo_args['l2_reg'])).fit(full_train['x'], full_train['y'])
@@ -198,6 +202,8 @@ if __name__ == '__main__':
     parser.add_argument("data_fname", type=str,
                         help="filename adult.csv")
     parser.add_argument("label_noise", type=float, default=None)
+    parser.add_argument("text_clean", type=str, default=None)
+    parser.add_argument("we_type", type=str, default=None)
     parser.add_argument("-seed", type=int, default=1000)
 
 
@@ -213,7 +219,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     params = {'seed':args.seed, \
-              'label_noise':args.label_noise}
+              'label_noise':args.label_noise, \
+              'text_clean':args.text_clean,
+              'we_type':args.we_type}
 
     if args.inc_hyperparams == 0:
         assert False
@@ -227,5 +235,4 @@ if __name__ == '__main__':
                       'pen_wgt':args.pen_wgt,
                       'penalty_anneal_iters':args.pen_ann
                       }
-    subreddit_oodgen(args.id, args.expdir, args.data_fname, params, algo_params, \
-    load_model='/scratch/hdd001/home/adragnar/experiments/civil_comments/subreddit_oodgen/1597183186.5170383')
+    subreddit_oodgen(args.id, args.expdir, args.data_fname, params, algo_params)

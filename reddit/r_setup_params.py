@@ -25,31 +25,34 @@ def hyp_subreddit_oodgen_setup():
     seeds = [10000]
     epochs = [50]
     n_batches = [2000]
-    hid_layers = [1] 
+    hid_layers = [1]
     lr = [1]
-    l2 = [0.1, 1.0, 10, 50]
+    l2 = [0.1]
     pen_wgt = [1]
     pen_ann = [1]
+    text_proc = [('sm', 'embed'), ('na', 'sbert')]
 
     cmdfile = join(expdir, 'cmdfile.sh')
     with open(cmdfile, 'w') as cmdf:
-        for id, combo in enumerate(itertools.product(seeds, epochs, n_batches, \
+        for id, combo in enumerate(itertools.product(text_proc, seeds, epochs, n_batches, \
                                        hid_layers, lr, l2, pen_wgt, pen_ann)):
             command_str = \
-            '''python reddit/r_main.py {id} {expdir} {data_fname} {l_noise} -seed {seed} -inc_hyperparams 1 -epochs {epoch} -n_batches {batch} -hid_layers {hid} -lr {lr} -l2 {l2} -pen_wgt {pen_wgt} -pen_ann {pen_ann}\n'''
+            '''python reddit/r_main.py {id} {expdir} {data_fname} {l_noise} {text_clean} {we_type} -seed {seed} -inc_hyperparams 1 -epochs {epoch} -n_batches {batch} -hid_layers {hid} -lr {lr} -l2 {l2} -pen_wgt {pen_wgt} -pen_ann {pen_ann}\n'''
             command_str = command_str.format(
                 id=id,
                 expdir=expdir,
                 data_fname=data_fname,
                 l_noise=0,
-                seed=combo[0],
-                epoch=combo[1],
-                batch=combo[2],
-                hid=combo[3],
-                lr=combo[4],
-                l2=combo[5],
-                pen_wgt=combo[6],
-                pen_ann=combo[7]
+                text_clean=combo[0][0],
+                we_type=combo[0][1],
+                seed=combo[1],
+                epoch=combo[2],
+                batch=combo[3],
+                hid=combo[4],
+                lr=combo[5],
+                l2=combo[6],
+                pen_wgt=combo[7],
+                pen_ann=combo[8]
             )
             cmdf.write(command_str)
 
