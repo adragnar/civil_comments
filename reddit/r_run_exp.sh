@@ -1,4 +1,4 @@
-max_proc=250
+max_proc=60
 labelgen=0
 hyp=1
 expdir=$(python reddit/r_setup_params.py $labelgen $hyp)

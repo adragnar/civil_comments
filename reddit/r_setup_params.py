@@ -9,28 +9,28 @@ sys.path.append(join(os.getcwd(), 'launchfiles'))
 
 import setup_params as setup
 
-def get_reddit_datapath(v):
-    if v == 'gendered':
-        return "reddit/data/labeled/2014_gendered_labeled.csv"
-    elif v == 'baseline':
-        return "reddit/data/labeled/2014b_labeled.csv"
-    else:
-        assert False
+# def get_reddit_datapath(v, labeltype):
+#     if v == 'gendered':
+#         return "reddit/data/labeled/2014_gendered_labeled.csv"
+#     elif v == 'baseline':
+#         return "reddit/data/labeled/2014b_labeled.csv"
+#     else:
+#         assert False
 
 
 def hyp_subreddit_oodgen_setup():
     expdir = setup.get_expdir('subreddit_oodgen')
-    data_fname = join(os.getcwd(), get_reddit_datapath('gendered'))
+    data_fname = "reddit/data/labeled/2014_gendered_bert_labeled.csv"
     #Params
-    seeds = [10000]
-    epochs = [50]
-    n_batches = [2000]
+    seeds = [10000, 8079]
+    epochs = [50, 100]
+    n_batches = [500, 2000, 15625]
     hid_layers = [1]
-    lr = [1]
-    l2 = [0.1]
-    pen_wgt = [1]
+    lr = [0.0001, 0.0001, 0.001]
+    l2 = [0.1, 1.0]
+    pen_wgt = [1000, 5000, 10000]
     pen_ann = [1]
-    text_proc = [('sm', 'embed'), ('na', 'sbert')]
+    text_proc = [('sm', 'embed')]
 
     cmdfile = join(expdir, 'cmdfile.sh')
     with open(cmdfile, 'w') as cmdf:

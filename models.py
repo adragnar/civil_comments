@@ -257,6 +257,7 @@ class LinearInvariantRiskMinimization(IRMBase):
             if (step % 5 == 0) or ((time.time() - t_last) > LOG_INTERVAL):
                 logging.info('step: {}, loss: {}, acc: {}, ipen: {}, time: {:+.2f}'.format(\
                                  np.int32(step), \
+                                 train_nll.detach().cpu().numpy(), \
                                  train_acc.detach().cpu().numpy(), \
                                  train_penalty.detach().cpu().numpy(), \
                                  (time.time() - t_last))

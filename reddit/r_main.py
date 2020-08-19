@@ -70,7 +70,7 @@ def evaluate(envs, model, ltype=['ACC']):
 
 def generate_data(t, data_fname, label_noise, nbatches, text_clean='na', \
                                                    tox_thresh=0.5, c_len=15):
-    full_data = pd.read_csv(data_fname); full_data = full_data.sample(n=100)
+    full_data = pd.read_csv(data_fname)
 
     #Dataset Level Preprocessing
     #Remove random columns that keep showing up
@@ -125,7 +125,6 @@ def subreddit_oodgen(id, expdir, data_fname, args, algo_args):
                              (time.time() - t_orig)))
 
     #Train Models
-    import pdb; pdb.set_trace()
     #Baseline Logistic Regression
     full_train = pd.concat([d.dataset.dataset for d in train_envs], ignore_index=True)[['pred_toxicity', 'body']]
     full_train = data_proc.ToxicityDataset(full_train, rel_cols={'data':'body', 'labels':'pred_toxicity'}, transform=t)[:]
